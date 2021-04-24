@@ -1,0 +1,1175 @@
+## Geom3D.py version 1.05
+## Built and tested in SDS/2 version 7.320
+## Copyright (c) 2015 BV Detailing & Design, Inc.
+## Author: Bruce Vaughan
+## Phone: (615)646-9239  Email: bvdet@comcast.net
+## All rights reserved. This software is NOT FOR SALE.
+##
+## Redistribution and use, with or without modification, are permitted
+## provided that the following conditions are met:
+##
+## * Redistributions of code must retain the above copyright notice, this
+##   list of conditions and the following disclaimers.
+## * This software is provided on an as-is basis. The author(s) and/or
+##   owner(s) are not obligated to provide technical support or
+##   assistance.
+## * This software does not include a warranty or guarantee of any kind.
+## * The author(s) and/or owner(s) of this software cannot be held liable for
+##   any claim, damage or liability claimed to be caused by this software.
+## * Any replication or modification to this software must have the consent
+##   of its author(s) and/or owner(s).
+##
+## The author(s) of this software have granted Design Data permission to
+## distribute this software with Design Data's SDS/2 software package,
+## however Design Data does not retain ownership of this software. Design
+## Data is not responsible for the content of this software, nor is Design
+## Data obligated to provide technical support for it.
+##
+## THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND COPYRIGHT HOLDER "AS IS" AND
+## ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+## IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+## PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR COPYRIGHT
+## HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY HOWEVER CAUSED
+## AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
+## TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
+## USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#############################################################################
+'''
+References:
+    'The shortest line between two lines in 3D'
+    'Equation of a plane',
+    'Intersection of three planes',
+    'Rotate a point about an arbitrary axis (3D)',
+    'Intersection of a plane and a line',
+    'Minimum Distance between a Point and a Line',
+    'Minimum Distance between a Point and a Plane',
+    'Intersection of two planes',
+    'Intersection of a Line and a Sphere (or circle)',
+    'Determining if a point lies on the interior of a polygon' - Paul Bourke
+
+Version history:
+1.01 (5/04/2013):
+    Add isParallel method to Line class
+
+1.02 (11/11/2013):
+    Add offset method to Plane class
+
+1.03 (11/13/2013):
+    Add linear and polar point spacing functions from macrolib.P3D.
+    All functions return lists of Point3D.Point3D
+    spaPts
+    fixSpaPts
+    autoSpaPts
+    polarSpaPts
+    polarFixSpaPts
+    polarAutoSpaPts
+    Add transXYZToGlobal method to Plane class
+    Add angle method to Line class
+    Add **kwargs argument to Plane constructor
+    Add function variableSpaPts
+
+1.04 (1/23/2014):
+    Check for dot product values greater than 1 or less than 1 in Plane3D
+    method angleBetweenPlanes.
+
+1.05 (1/1/2015):
+    Modify function unitV() to return None if vector magnitude is <= EPS.
+    Modify class Plane to raise ValueError if (3) collinear points are passed
+    as arguments. Collinear points were producing a valid normal unit vector.
+
+(3/18/2015):
+    Add keyword "ends" to function variableSpaPts. Defaults to False to
+    consistency with other spacing functions.
+    So far only BentPL and EmbedAngle use this function.
+'''
+import math
+
+import Math3D
+import Transform3D
+import Point3D
+import param
+# feq, fge, fgt, fle, flt, fne
+import FloatComparison
+from member import *
+from dialog.dimension import DimensionStyled
+
+# small number to be used to compare floating point numbers
+EPS = 0.0001
+
+def mag(p):
+    '''Return the magnitude of a vector.'''
+    return (p.x**2 + p.y**2 + p.z**2)**0.5
+
+def unitV(p):
+    '''Return the unit vector of a vector.'''
+    m = mag(p)
+    if m > EPS:
+        return Point3D.Point3D(p.x/m, p.y/m, p.z/m)
+    return None
+
+def cross_product(p1, p2):
+    '''Return the cross product of two vectors.'''
+    return Point3D.Point3D(p1.y*p2.z - p1.z*p2.y,
+                           p1.z*p2.x - p1.x*p2.z,
+                           p1.x*p2.y - p1.y*p2.x)
+
+def dot_product(p1, p2):
+    '''Return the dot product of two vectors. The dot product is the cosine
+    of the angle between the vectors if the vectors are unit vectors.'''
+    return (p1.x*p2.x + p1.y*p2.y + p1.z*p2.z)
+
+def factorPt(pt, factor):
+    '''Multiply the XYZ attributes of point "pt" by "factor" and return the
+    factored point.'''
+    return Point3D.Point3D(factor*pt.x, factor*pt.y, factor*pt.z)
+
+def plane_def(p1, p2, p3):
+    '''Define a plane from three points.'''
+    N = cross_product(p2-p1, p3-p1)
+    A = N.x
+    B = N.y
+    C = N.z
+    D = dot_product(-N, p1)
+    return N, A, B, C, D
+
+def movePoint3D(p1, p2, d, p3=False):
+    '''
+    Calculate the vector p1-->p2
+    Translate distance 'd' parallel to vector p1-->p2 from point 'p3'
+    "p3" defaults to "p2"
+    '''
+    return Point3D.Point3D(p3 or p2)+unitV(p2-p1)*d
+
+def determinantUV(uv1, uv2):
+    '''
+    Calculation used to determine the intersection of two planes.'''
+    return (dot_product(uv1, uv1) * 
+            dot_product(uv2, uv2) - 
+            (dot_product(uv1, uv2))**2)
+
+def determinant3x3(a,b,c,m,n,k,u,v,w):
+    '''Return the determinant of a 3x3 matrix.
+        | a b c |
+        | m n k |
+        | u v w |
+    '''
+    return a*n*w + b*k*u + m*v*c - c*n*u - b*m*w - a*k*v
+
+def chk_type(ptList):
+    ''' Return True if all objects in ptList have 'x', 'y', and 'z'
+    attributes. Otherwise, return False.'''
+    for pt in ptList:
+        if None in [getattr(pt, a, None) for a in ('x', 'y', 'z')]:
+            return False
+    return True
+
+def midPt(p1, p2):
+    '''Return the midpoint between two points.'''
+    return Point3D.Point3D(p2-p1)/2+Point3D.Point3D(p1)
+
+def getMemXYZ(mem):
+    '''
+    Return x, y, z, unit vectors of member coordinate system.
+    '''
+    t = Transform3D.Transform3D(mem.MemberNumber)
+    return Transform3D.GetXYZ(t)
+
+class Plane(object):
+    '''
+    Define a plane from three points or one point and a normal vector.
+    If defined from three points, the normal vector is calculated using
+    the right-hand grip rule where the three points are oriented in a
+    counter-clockwise direction (p1->p2->p3).
+    
+    Implemented methods:
+        onPlane(point, tolerance=EPS) -> boolean
+        distPtPlane(point) -> signed float (distance from point to plane)
+            Positive distance, point is above (inside) plane
+            Negative distance, point is below (outside) plane
+            Terms "inside" and "outside" are used in the context of a box
+            with all normal vectors pointing toward the inside.
+        angleBetweenPlanes(other) -> float in radians
+        isParallel(other, tol=EPS) -> boolean
+        intersPlane(self, other, u1=1, u2=100)
+        intersLinePlane(line, tol=EPS) -> Point or None
+        isLineParallel(line, tol=EPS) -> boolean
+        intersLineSegPlane(line, tol=EPS) -> Point or None
+        inside(point, tolerance=EPS) -> boolean
+    All Point attributes defined are Point3D.Point3D objects.
+    '''
+    def __init__(self, *points, **kwargs):
+        self.points = [Point3D.Point3D(pt) for pt in points]
+        self.__dict__.update(kwargs)
+        try:
+            if len(points) == 2:
+                self.pt = Point3D.Point3D(points[0])
+                self.normal = Point3D.Point3D(points[1])
+                self.nuv = unitV(points[1])
+                
+            elif len(points) > 2:
+                self.pt = Point3D.Point3D(points[0])
+                self.normal = cross_product(points[1]-points[0],
+                                            points[2]-points[0])
+                if mag(self.normal) <= EPS:
+                    self.nuv = None
+                    raise ValueError, "Points must not be collinear."
+                self.nuv = unitV(self.normal)
+                # With 3 points, an orthonormal basis can be defined
+                # X, Y, Z are unit vectors defining the basis
+                self.X = unitV(points[1]-points[0])
+                self.Z = self.nuv
+                self.Y = unitV(cross_product(self.Z, self.X))
+                
+                # included angle between vectors p0->p1 and p0->p2
+                self.Q = math.acos(dot_product(unitV(points[1]-points[0]),
+                                               unitV(points[2]-points[0])))
+                
+                # radius of an arc through points[1] with center at points[0]
+                self.R = self.points[0].Distance(self.points[1])
+                
+                # measured distance along the arc, arc chord, and midordinate
+                self.pp = abs(self.Q * self.R)
+                self.chord = self.R * math.sin(self.Q/2) * 2
+                self.midordinate = self.R-(self.R**2-(self.chord/2)**2)**0.5
+                
+            else:
+                e = "Plane() requires a minimum of 2 two point arguments."
+                raise TypeError, e
+
+        except Exception, e:
+            param.Warning("Plane argument error: %s" % (e))
+
+    def getXYZ(self):
+        try:
+            return self.X, self.Y, self.Z
+        except AttributeError, e:
+            s = "The plane must be defined with three points "
+            param.Warning(s+"to determine basis unit vectors.")
+            return None, None, None
+
+    def trans(self, localPt):
+        A,B,N = self.getXYZ()
+        # magnitude of local coordinate vector
+        M = mag(localPt)
+        # unit vector X,Y,Z
+        if M > EPS:
+            X,Y,Z = localPt.x/M, localPt.y/M, localPt.z/M
+        else:
+            return self.pt
+        Dx = determinant3x3(X, A.y, A.z, Y, B.y, B.z, Z, N.y, N.z)
+        Dy = determinant3x3(A.x, X, A.z, B.x, Y, B.z, N.x, Z, N.z)
+        Dz = determinant3x3(A.x, A.y, X, B.x, B.y, Y, N.x, N.y, Z)
+        D = determinant3x3(A.x, A.y, A.z, B.x, B.y, B.z, N.x, N.y, N.z)
+        if D:
+            return(Point3D.Point3D(Dx/D, Dy/D, Dz/D)*M)
+        return None
+
+    def transXYZToGlobal(self, X, Y, Z, basePt=Point3D.Point3D()):
+        '''
+        Instantiate a local point from X, Y, Z values. Return the local point
+        translated into global coordinates with respect to basePt. basePt
+        defaults to Point3D.Point3D(0,0,0).
+        '''
+        return self.trans(Point3D.Point3D(X, Y, Z)) + Point3D.Point3D(basePt)
+
+    def transToGlobal(self, localPt):
+        '''
+        Return local point "localPt" translated into global coordinates with
+        respect to self.pt.
+        '''
+        return self.trans(localPt) + self.pt
+
+    def transToLocal(self, globalPt, refPt=False):
+        '''
+        Return global point "globalPt" translated into local coordinates
+        with respect to another global point "refPt". "refPt" defaults
+        to self.pt.
+        Vector projection of: globalPt along 'X' axis,
+                              globalPt along 'Y' axis,
+                              globalPt along 'Z' axis
+        Example: obj.transToLocal(Point(12,24,36), Point(24,36,48))
+            returns the local coordinate of Point(12,24,36) with
+            respect to Point(24,36,48)
+        '''
+        X,Y,Z = self.getXYZ()
+        R = Point(globalPt) - Point((refPt or self.pt))
+        return Point3D.Point3D(dot_product(R, X),
+                               dot_product(R, Y),
+                               dot_product(R, Z))
+            
+    def onPlane(self, pt, tol=EPS):
+        '''
+        Return True if pt lies on self within tolerance.
+        '''
+        if abs(self.distPtPlane(pt)) < tol:
+            return True
+        return False        
+
+    def closestPtPlane(self, pt):
+        '''
+        Return the point on self that is the closest point to pt.
+        '''
+        return Point3D.Point3D(pt) - self.nuv*self.distPtPlane(pt)
+
+    def distPtPlane(self, pt):
+        '''
+        Return signed minimum distance from point to self.
+        '''
+        return dot_product(self.nuv, (Point3D.Point3D(pt)-self.pt))
+
+    def angleBetweenPlanes(self, other):
+        '''
+        Return unsigned angle between self and other plane in radians.
+        '''
+        # print "\n****%s\n****%s" % (self.nuv, other.nuv)
+        try:
+            return math.acos(max(-1, min(dot_product(self.nuv, other.nuv), 1)))
+        except ValueError, e:
+            print "ValueError Geom3D.Plane.angleBetweenPlanes: \n    %s" % (e)
+            raise ValueError, e
+
+    def isParallel(self, other, tol=EPS):
+        '''
+        Return True if self and other plane are parallel. Planes are parallel
+        if the angle between the planes == 0 or == 360 within tolerance.
+        '''
+        return any((abs(self.angleBetweenPlanes(other)) < tol,
+                    abs(self.angleBetweenPlanes(other)-math.pi) < tol))
+
+    def intersPlane(self, other, u1=-1000, u2=1000):
+        '''
+        Return the Line object that lies at the intersection of self and
+        another plane calculated with factors u1 and u2.
+        '''
+        if not self.isParallel(other):
+            d1 = dot_product(self.nuv, self.pt)
+            d2 = dot_product(other.nuv, other.pt)
+            c1 = ((dot_product(other.nuv*d1, other.nuv) -
+                   dot_product(self.nuv*d2, other.nuv)) /
+                  determinantUV(self.nuv, other.nuv))
+            c2 = ((dot_product(self.nuv*d2, self.nuv) - 
+                   dot_product(self.nuv*d1, other.nuv)) /
+                  determinantUV(self.nuv, other.nuv))
+            pts = []
+            for u in (u1, u2):
+                pts.append(self.nuv*c1 +
+                           other.nuv*c2 +
+                           cross_product(self.nuv, other.nuv)*u)
+            return Line(*pts)
+        return None
+
+    def intersLinePlane(self, line, tol=EPS):
+        '''
+        Return intersection point of self and line (extended).
+        '''
+        num = dot_product(self.nuv, (self.pt-line.pt1))
+        den = dot_product(self.nuv, line.v)
+        if abs(den) < tol:
+            return None
+        return line.pt1 + line.v*num/den
+
+    def isLineParallel(self, line, tol=EPS):
+        '''
+        Return True if self and line are parallel.
+        '''
+        if self.intersLinePlane(line, tol):
+            return False
+        return True
+
+    def intersLineSegPlane(self, line, tol=EPS):
+        '''
+        Return intersection point of self and line segment.
+        '''
+        num = dot_product(self.nuv, (self.pt-line.pt1))
+        den = dot_product(self.nuv, line.v)
+        if abs(den) > tol:
+            k = num/den
+            if k > -tol and k < 1+tol:
+                return line.pt1 + line.v*num/den
+        return None
+
+    def inside(self, pt, tol=EPS):
+        '''
+        Return True if pt lies on self within tolerance or is above (inside).
+        '''
+        return self.distPtPlane(pt) > -tol
+
+    def offset(self, dist, **kwargs):
+        '''
+        Return new parallel Plane located "dist" distance away in the
+        "Z" direction. 
+        '''
+        locPt = self.nuv*dist
+        return Plane(*[locPt+pt for pt in self.points], **kwargs)
+
+    def __repr__(self):
+        return "Plane(%s, %s)" % (self.pt, self.nuv)
+
+class ThreePtCircle(object):
+    '''
+    From three non-collinear points, calculate the center point and radius
+    of a circle going through the three points from the intersection of
+    three planes.
+    
+    The intersection point of three planes "M" is given by:
+    
+        (k0*(N1 cross N2) + k1*(N2 cross N0) + k2*(N0 cross N1))
+    M = --------------------------------------------------------
+                    (N0 dot (N1 cross N2))
+                    
+    where Nx is the plane normal and kx is the dot_product of a point on the
+    plane and the normal vector.
+    '''
+    def __init__(self, P0, P1, P2):
+        # Find the intersection of three planes
+        plane0 = Plane(P0, P1, P2)
+        N0 = plane0.normal
+        k0 = dot_product(N0, P0)
+
+        N1 = P2-P0
+        k1 = dot_product(P2-P0, midPt(P0, P2))
+
+        N2 = P1-P0
+        k2 = dot_product(P1-P0, midPt(P0, P1))
+        
+        N12 = cross_product(N1, N2) * k0
+        N20 = cross_product(N2, N0) * k1
+        N01 = cross_product(N0, N1) * k2
+        N0dN12 = dot_product(N0, cross_product(N1, N2))
+        
+        if abs(N0dN12) > EPS:
+            n = N12+N20+N01
+            self.ctrPt = Point3D.Point3D(n.x/N0dN12, n.y/N0dN12, n.z/N0dN12)
+            self.radius = self.ctrPt.Distance(Point3D.Point3D(P0))
+        else:
+            self.ctrPt = None
+            self.radius = None
+            
+    def getCtrRad(self):
+        return self.ctrPt, self.radius
+
+def PointRotate3D(pt, ptWP, nuv, theta):
+    """
+    Rotate point pt about a line passing through ptWP along unit vector nuv
+    by angle 'theta' in radians. Return the new point as a Point3D.Point3D.
+       Matrix "M":
+    |d11 d12 d13  0 |
+    |d21 d22 d23  0 |
+    |d31 d32 d33  0 |
+    | 0   0   0   1 |
+    """    
+
+    # Type cast to Point3D.Point3D, translate so axis is at origin
+    ptWP = Point3D.Point3D(ptWP)
+    pt = Point3D.Point3D(pt)
+    pt -= ptWP
+
+    # Matrix common factors
+    c = math.cos(theta)
+    t = (1-math.cos(theta))
+    s = math.sin(theta)
+    X = nuv.x
+    Y = nuv.y
+    Z = nuv.z
+
+    d11 = t*X**2 + c
+    d12 = t*X*Y - s*Z
+    d13 = t*X*Z + s*Y
+    d21 = t*X*Y + s*Z
+    d22 = t*Y**2 + c
+    d23 = t*Y*Z - s*X
+    d31 = t*X*Z - s*Y
+    d32 = t*Y*Z + s*X
+    d33 = t*Z**2 + c
+
+    #            |pt.x|
+    # Matrix 'M'*|pt.y|
+    #            |pt.z|
+    x = d11*pt.x + d12*pt.y + d13*pt.z
+    y = d21*pt.x + d22*pt.y + d23*pt.z
+    z = d31*pt.x + d32*pt.y + d33*pt.z
+    
+    # Translate axis and rotated point back to original location
+    return Point3D.Point3D(x,y,z) + ptWP
+        
+class Line(object):
+    '''
+    Define a line segment with attributes pt1, pt2, v (vector) and
+    uv (unit vector).
+    '''
+    def __init__(self, p1, p2):
+        self.pt1 = Point3D.Point3D(p1)
+        self.pt2 = Point3D.Point3D(p2)
+        self.v = self.pt2-self.pt1
+        self.uv = unitV(self.v)
+
+    def closestPtLine(self, pt):
+        '''
+        Return closest point on self to pt.
+        '''
+        self.u = (((pt.x-self.pt1.x)*(self.v.x)) + 
+                  ((pt.y-self.pt1.y)*(self.v.y)) + 
+                  ((pt.z-self.pt1.z)*(self.v.z))) / mag(self.v)**2
+        return self.pt1+self.u*self.v
+   
+    def distPtLine(self, pt):
+        '''
+        Return unsigned distance between pt and closest point on self.
+        '''
+        pt = Point3D.Point3D(pt)
+        return pt.Distance(self.closestPtLine(pt))
+
+    def ptNearSegment(self, pt, tol=EPS):
+        '''
+        Return True is pt lies in between self end points. 'pt' need not be
+        on the line segment.
+        '''
+        pt = self.closestPtLine(pt)
+        return self.u >= 0-tol and self.u <= 1+tol
+
+    def ptOnSegment(self, pt, tol=EPS):
+        '''
+        Return True is pt lies in between self end points. 'pt' must be
+        on the line segment within tolerance.
+        '''
+        px = self.closestPtLine(pt)                  # Calculate self.u
+        if self.distPtLine(pt) < tol and \
+           self.u >= 0-tol and \
+           self.u <= 1+tol:
+            return True
+        return False
+
+    def inters(self, other):
+        '''
+        Given two lines, return point on line 1 that is closest to line 2 and
+        point on line 2 that is closest to line 1 or None, None
+        '''
+        A = self.pt1-other.pt1
+        B = self.v
+        C = other.v
+
+        if not abs(mag(cross_product(self.uv, other.uv))) < EPS:
+            self.ma = (((dot_product(A, C)*dot_product(C, B)) - 
+                        (dot_product(A, B)*dot_product(C, C)))/ 
+                      ((dot_product(B, B)*dot_product(C, C)) - 
+                        (dot_product(C, B)*dot_product(C, B))))
+            self.mb = ((self.ma*dot_product(C, B) + dot_product(A, C)) /
+                       dot_product(C, C))
+
+            return self.pt1+B*self.ma, other.pt1+C*self.mb
+        # Lines are parallel in space and do not intersect
+        return None, None
+
+    def isParallel(self, other):
+        if self.inters(other) == (None, None):
+            return True
+        return False
+
+    def angle(self, other):
+        # return the angle between line vectors in radians
+        # the range of angles is 0-->180
+        return math.acos(max(-1,min(dot_product(unitV(self.pt2-self.pt1),
+                                           unitV(other.pt2-other.pt1)),1)))
+
+    def __iter__(self):
+        for pt in (self.pt1, self.pt2):
+            yield pt
+
+    def __repr__(self):
+        return "Line(%s, %s)" % (self.pt1, self.pt2)
+        
+class Box(object):
+    '''
+    Define a rectangular box with six sides. Each side is represented
+    by a Plane object. Each plane normal vector should point toward
+    the inside of the rectangular box.
+    '''
+    def __init__(self, top, bott, left, right, ns, fs):
+        self.sides = top, bott, left, right, ns, fs
+        self.top = top
+        self.bott = bott
+        self.left = left
+        self.right = right
+        self.ns = ns
+        self.fs = fs
+        
+    def inside(self, pt, tol=EPS):
+        '''
+        Return True if point lies inside the box or lies on one of the
+        faces within tolerance.
+        '''
+        for i, side in enumerate(self.sides):
+            if not side.inside(pt, tol):
+                # print "Side %d: %s" % (i, side)
+                return False
+        return True
+
+class Polygon(object):
+    '''
+    Define a polygon in 3D space. There must be 3 points minimum and
+    oriented to form a valid closed polygon. The polygon vertices can
+    be ordered clockwise or anticlockwise. The polygon can be convex
+    or concave.
+
+    All points must be on the same plane and distinct (no common points).
+    The plane is defined by the first three points.
+    
+    An inside polygon test is implemented to test whether a point is
+    inside the closed polygon. The point to be tested need not be on
+    the plane - the code will translate to the plane surface using
+    plane method closestPtPlane.
+
+    A point is considered inside if the point is within a distance
+    that is =< tolerance (tol).
+    '''
+    def __init__(self, *points):
+        self.plane = Plane(points[0], points[1], points[2])
+        self.points = [self.plane.closestPtPlane(pt) for pt in points]
+        self.lines = [Line(points[i], points[i+1]) for \
+                      i in range(len(points)-1)]
+        self.lines.append(Line(points[-1], points[0]))
+        
+    def inside(self, pt, limit=10, theta=-1, tol=EPS):
+        '''
+        If there is an odd number of intersections between a ray and the
+        polygon line segments, the point is inside the polygon. If not,
+        the point is outside the polygon. A point on one of the line
+        segments is considered inside. A ray that passes exactly through
+        a vertex may produce an invalid result.
+        '''
+        pt1 = Point3D.Point3D(pt)+self.plane.Y*limit
+        # rotate pt1 to create skewed ray with respect to plane 'Y' axis
+        self.pt1 = PointRotate3D(pt1, pt, self.plane.nuv, theta)
+        ray = Line(pt, self.pt1)
+        oddInters = False
+        for line in self.lines:
+            if line.ptOnSegment(pt, tol):
+                return True
+            p1, p2 = line.inters(ray)
+            # Attribute mb is the factor applied to 'ray'
+            # Attribute ma is the factor applied to 'line'
+            if p1 and line.mb > EPS and EPS < line.ma <= 1+EPS:
+                oddInters = not oddInters
+        return oddInters
+
+def pointToSPt3D(pt):
+    '''
+    Convert a vector (point) to a spherical point object.
+    '''
+    r = mag(pt)
+    theta = math.atan2(math.sqrt(pt.x**2+pt.y**2), pt.z)
+    phi = math.atan2(pt.y, pt.x)
+    return SPt3D(r, theta, phi)
+
+class SPt3D(object):
+    '''
+    Spherical point object
+    radial coordinate (r), zenith angle (theta), azimuth angle (phi)
+    The zenith angle is also known as the inclination angle.
+    The zenith angle is with respect to the positive "Z" axis.
+    Method toPoint3D(): convert to cartesian coordinates.'''
+    def __init__(self, r, theta, phi):
+        self.r = r
+        self.theta = theta
+        self.phi = phi
+
+    def __repr__(self):
+        return '%s(%f, %f, %f)' % (self.__class__.__name__,
+                                   self.r, self.theta, self.phi)
+
+    def toPoint3D(self):
+        x = self.r*math.cos(self.phi)*math.sin(self.theta)
+        y = self.r*math.sin(self.phi)*math.sin(self.theta)
+        z = self.r*math.cos(self.theta)
+        return Point3D.Point3D(x,y,z)
+
+def spaPts(p1, p2, spaces=2, ends=False):
+    '''Return a list of evenly spaced Point3Ds between p1 and p2
+    If 'ends' is True, the point list includes p1 and p2'''
+    # Typecast to Point3D.Point3D
+    p1, p2 = map(Point3D.Point3D, (p1, p2))
+    p0 = p2-p1
+    ptList = [(p0 * (i/float(spaces)) + p1) for i in xrange(1, spaces)]
+    if ends:
+        ptList.insert(0,p1)
+        ptList.append(p2)
+    return ptList
+
+def fixSpaPts(p1, p2, spacing, leftDist=False, rightDist=False, ends=False):
+    '''Return a list of Point3Ds at a fixed spacing between p1 and p2.
+    'leftDist' and 'rightDist' are minumum distances from the
+    respective ends (p1=left end, p2=right end) and default to 'spacing/2'.
+    If 'ends' is True, the point list includes p1 and p2.
+    '''
+    p1, p2 = map(Point3D.Point3D, (p1, p2))
+    spacing = float(spacing)
+    leftDist=leftDist or spacing/2
+    rightDist=rightDist or spacing/2
+    maxOutOut = p1.Distance(p2) - leftDist - rightDist
+    if maxOutOut < 0.0:
+        if ends:
+            return [p1, p2]
+        return []
+    noSpa = int(math.floor(maxOutOut/spacing))
+    ptList = [movePoint3D(p1, p2,
+                    (leftDist + (maxOutOut-spacing*noSpa) / 2), p1), ]
+    for i in xrange(noSpa):
+        ptList.append(movePoint3D(p1, p2, spacing, ptList[-1]))
+    if ends:
+        ptList.insert(0,p1)
+        ptList.append(p2)
+    return ptList
+
+def autoSpaPts(p1, p2, spacing, leftDist=False, rightDist=False, ends=False):
+    '''Return a list of Point3Ds at a maximum spacing between p1 and p2.
+    Optional arguments 'leftDist' and 'rightDist' are the distances from the
+    respective ends (p1=left end, p2=right end) and default to 'spacing/2'.
+    If 'ends' is True, the point list includes p1 and p2.
+    '''
+    p1, p2 = map(Point3D.Point3D, (p1, p2))
+    spacing = float(spacing)
+    leftDist=leftDist or spacing/2
+    rightDist=rightDist or spacing/2
+    OutOut = p1.Distance(p2) - leftDist - rightDist
+    if OutOut < 0.0:
+        if ends:
+            return [p1, p2]
+        return []
+    noSpa = int(math.ceil(OutOut / spacing))
+    spacing = OutOut / noSpa
+    ptList = [movePoint3D(p1, p2, leftDist, p1), ]
+    if noSpa > 0:
+        for i in xrange(noSpa):
+            ptList.append(movePoint3D(p1, p2, spacing, ptList[-1]))
+    else:
+        ptList = ptList.append(movePoint3D(p2, p1, rightDist, p2))
+    if ends:
+        ptList.insert(0,p1)
+        ptList.append(p2)
+    return ptList
+
+def polarSpaPts(plane, spaces=6, ends=False):
+    '''
+    "plane" is a Geom3D.Plane instance defined with 3 points. Return a list
+    of evenly spaced Point3Ds starting at point plane.points[1], rotated about
+    point plane.points[0], between the included angle plane.Q and along radius
+    plane.R. If 'ends' is True, the point list includes the start and end
+    points. '''
+    spacing = plane.pp / spaces
+    ptList = [PointRotate3D(plane.points[1],
+                            plane.points[0],
+                            plane.nuv,
+                            spacing * i / plane.R) for i in range(1,spaces)]
+    if ends:
+        return ([plane.points[1],] +
+                ptList +
+                [PointRotate3D(plane.points[1],
+                               plane.points[0],
+                               plane.nuv,
+                               plane.Q),])
+    else:
+        return ptList
+
+def polarFixSpaPts(plane, spacing,
+                   startDist=False,
+                   endDist=False,
+                   ends=False):
+    '''
+    "plane" is a Geom3D.Plane instance defined with 3 points. Return a list
+    of Point3Ds at a fixed spacing starting at point plane.points[1], rotated
+    about point plane.points[0], between the included angle plane.Q and along
+    radius plane.R.
+    'startDist' and 'endDist' are minumum distances along the arc from the
+    respective ends and default to 'spacing/2'. plane.points[1] is the start
+    point, and the array progresses counter-clockwise with respect to the
+    local basis of the plane.
+    If 'ends' is True, the point list includes the start and end points. '''
+    startDist = startDist or spacing/2
+    endDist = endDist or spacing/2
+    maxOutOut = plane.pp - startDist - endDist
+    spaces = int(math.floor(maxOutOut / spacing))
+    netDist = startDist + ((maxOutOut - (spaces * spacing)) / 2.0)
+    ptList = [PointRotate3D(
+                plane.points[1],
+                plane.points[0],
+                plane.nuv,
+                (netDist+spacing*i) / plane.R) for i in range(0, spaces+1)]
+    if ends:
+        return ([plane.points[1],] +
+                ptList +
+                [PointRotate3D(plane.points[1],
+                               plane.points[0],
+                               plane.nuv,
+                               plane.Q),])
+    else:
+        return ptList
+
+def polarAutoSpaPts(plane, spacing,
+                    startDist=False,
+                    endDist=False,
+                    ends=False):
+    '''
+    "plane" is a Geom3D.Plane instance defined with 3 points. Return a list
+    of Point3Ds at a maximum spacing starting at point plane.points[1],
+    rotated about point plane.points[0], between the included angle plane.Q
+    and along radius plane.R.
+    'startDist' and 'endDist' are exact distances along the arc from the
+    respective ends and default to 'spacing/2'. plane.points[1] is the start
+    point, and the array progresses counter-clockwise with respect to the
+    local basis of the plane.
+    If 'ends' is True, the point list includes the start and end points. '''
+    # PointRotate3D(pt, ptWP, nuv, theta)
+    startDist = startDist or spacing/2
+    endDist = endDist or spacing/2
+    spaces = int(math.ceil((plane.pp - startDist - endDist) / spacing))
+    actualSpa = (plane.pp - startDist - endDist) / spaces
+    ptList = [PointRotate3D(
+                plane.points[1],
+                plane.points[0],
+                plane.nuv,
+                (startDist+actualSpa*i)/plane.R) for i in range(0, spaces+1)]
+    if ends:
+        return ([plane.points[1],] +
+                ptList +
+                [PointRotate3D(plane.points[1],
+                               plane.points[0],
+                               plane.nuv,
+                               plane.Q),])
+    else:
+        return ptList
+
+def variableSpaPts(p1, p2,
+                   spacingObj,
+                   leftDist=0.0,
+                   rightDist=0.0,
+                   ends=False):
+    '''
+    Return a list of Point3Ds at the spacing represented by VarSpa object
+    spacingObj between p1 and p2. spacingObj.var_str is in the format
+    "24,36,4@48,600mm" or "24,". spacingObj.expandToDims() returns
+    spacingObj.var_str expanded into a list of floating point numbers.
+    The spacing points will start at p1+leftDist. The last point will be
+    at p1.Distance(p2)-rightDist. Any points beyond the last point will be
+    discarded.'''
+    spacingList = spacingObj.expandToDims()
+    maxDist = p1.Distance(p2)-rightDist
+    offset = leftDist
+    ptList = []
+    if ends:
+        ptList.append(movePoint3D(p1, p2, offset, p1))
+    for dist in spacingList:
+        offset += dist
+        if offset >= maxDist:
+            break
+        ptList.append(movePoint3D(p1, p2, offset, p1))
+    if ends:
+        ptList.append(movePoint3D(p2, p1, rightDist, p2))
+    return ptList
+
+if __name__ == "__main__":
+    from math import *
+    from point import *
+    from macrolib.highlight_points import add_cc, remove_cc
+    from macrolib import VarSpacing
+
+    def test_plane():
+        pt1 = PointLocate("Pick pt1")
+        pt2 = PointLocate("Pick pt2", pt1)
+        pt3 = PointLocate("Pick pt3", pt1)
+        try:
+            p = Plane(pt1, pt2, pt3)
+            print "%s,%s,%s" % (p.X, p.Y, p.Z)
+            x = cross_product(pt2-pt1, pt3-pt1)
+            print x, mag(x) > EPS
+            print p.nuv, p.Z, mag(p.Z), mag(p.Z) > EPS
+        except Exception, e:
+            return e
+    test_plane()
+
+    '''
+    def test_var_spa(spaObj):
+        pt1 = PointLocate("Pick point 1")
+        add_cc(pt1, 1, "red")
+        pt2 = PointLocate("Pick point 2", pt1)
+        add_cc(pt2, 1, "green")
+        return variableSpaPts(pt1, pt2, spaObj, 12, 12)
+
+    vs = VarSpacing.VarSpa(" 24in, 36, 4@48, 54, 512mm, 45in,")
+    ptList = test_var_spa(VarSpacing.VarSpa(" 24in, 36, 4@48, 54, 512mm, 45in, 72"))
+    for pt in ptList:
+        print pt
+        add_cc(Point(pt), 1, "yellow")
+
+
+    def planeTest():
+        param.ClearSelection()
+        mem1 = MemberLocate("Select member 1")
+        mem2 = MemberLocate("Select member 2")
+        p1 = PointLocate("Pick point 1")
+        add_cc(p1, 1, "red")
+        p2 = PointLocate("Pick point 2", p1)
+        add_cc(p2, 1, "green")
+        p3 = PointLocate("Pick point 3", p2)
+        add_cc(p3, 1, "blue")
+        p4 = PointLocate("Pick point 4", p3)
+        add_cc(p4, 1, "yellow")
+        plane1 = Plane(p1, p2, p3)
+        print "planeTest()"
+        print
+        print plane1
+        print "Three points normal unit vector:", plane1.nuv
+        print "Basis unit vectors of plane1:"
+        print "\n".join(["  %s" % (item) for item in plane1.getXYZ()])
+        print
+        plane2 = Plane(p1, getMemXYZ(mem2)[2])
+        print plane2
+        print "Two points normal unit vector:", plane2.nuv
+        print "Basis unit vectors of plane2:"
+        print "\n".join(["  %s" % (item) for item in plane2.getXYZ()])
+        print
+        print "p1, getMemXYZ(mem2)[2]:"
+        print "  ", p1, getMemXYZ(mem2)[2]
+
+        line1 = plane1.intersPlane(plane2)
+        p11, p12 = line1
+        print
+        print "plane1.intersPlane(plane2):"
+        print line1
+        print "p11", p11
+        print "p12", p12
+        if p11:
+            add_cc(Point(p11), 2, "white")
+            add_cc(Point(p12), 2, "white")
+            cl2 = ConsLine()
+            cl2.pt1 = Point(p11)
+            cl2.pt2 = Point(p12)
+            cl2.pen = "white"
+            cl2.add()
+        print
+        print "Angle between planes:", plane1.angleBetweenPlanes(plane2)
+        print "Angle between planes:", plane2.angleBetweenPlanes(plane1)
+        print
+        print "Distance p4 to plane2:", plane2.distPtPlane(p4)
+        print "Distance p3 to plane2:", plane2.distPtPlane(p3)
+        print
+        print "Closest point on plane2 to p4", plane2.closestPtPlane(p4)
+        print "Closest point on plane2 to p3", plane2.closestPtPlane(p3)
+        add_cc(Point(plane2.closestPtPlane(p4)), 3, "yellow")
+        add_cc(Point(plane2.closestPtPlane(p3)), 3, "yellow")
+        param.ClearSelection()
+        line1 = Line(p1, p2)
+        line2 = Line(p3, p4)
+        print
+        print line1
+        print
+        print line2
+        p13, p14 = line1.inters(line2)
+        print
+        print "line1.inters(line2) (p13, p14):"
+        print p13
+        print p14
+        print "p13 on segment line1:" , line1.ptOnSegment(p13)
+        print "p14 on segment line2:" , line2.ptOnSegment(p14)
+        print 
+        if p13:
+            add_cc(Point(p13), 2, "white")
+        print
+        p15 = line1.closestPtLine(p3)
+        add_cc(Point(p15), 2, "white")
+        print "Closest pt3 line1 (p15)", p15
+        print "Dist pt3 line1:", line1.distPtLine(p3)
+        print
+        print "p15 on segment line1:" , line1.ptOnSegment(p15)
+        print "p1 on segment line1:" , line1.ptOnSegment(p1)
+        print "p2 on segment line1:" , line1.ptOnSegment(p2)
+        print
+        p16 = plane2.intersLinePlane(line2)
+        if p16:
+            add_cc(Point(p16), 2, "white")
+        print "plane2 intersLinePlane line 2:", p16
+        p17 = plane2.intersLineSegPlane(line2)
+        if p17:
+            add_cc(Point(p17), 2, "white")
+        print "plane2 intersLineSegPlane line 2:", p17
+        print
+        print "plane1 isLineParallel line1:", plane1.isLineParallel(line1)
+        print "plane2 isLineParallel line1:", plane2.isLineParallel(line1)
+        print
+        print "plane1 isParallel plane1:", plane1.isParallel(plane1)
+        print "plane1 isParallel plane2:", plane1.isParallel(plane2)
+        print
+        print "plane1 onPlane p2:", plane1.onPlane(p2)
+        print "plane2 onPlane p2:", plane2.onPlane(p2)
+        print
+        print "plane1 inside p2:", plane1.inside(p2)
+        print "plane2 inside p2:", plane2.inside(p2)
+        print "plane2 inside p4:", plane2.inside(p4)
+        print
+        p18 = pointToSPt3D(p1)
+        print "p1 -> spherical point (p18):", p18
+        print "p18 -> Point3D:", p18.toPoint3D()
+        print
+        tpc = ThreePtCircle(p1, p2, p3)
+        print "ThreePtCircle(p1, p2, p3):"
+        print "  Center Point - %s" % (tpc.ctrPt)
+        print "        Radius - %s" % (tpc.radius)
+        if tpc.radius:
+            add_cc(Point(tpc.ctrPt), tpc.radius, "white")
+        else:
+            print "ThreePtCircle failed possibly due to collinear points."
+        print
+        print "Included angle between vectors p1->p2 and p1->p3:"
+        print "plane1.Q in radians = %s" % (plane1.Q)
+        print "plane1.R = %s" % (plane1.R)
+        print "plane1.pp (point to point along arc) = %s" % (plane1.pp)
+        print "plane1.midordinate = %s" % (plane1.midordinate)
+        print "plane1.chord = %s" % (plane1.chord)
+        add_cc(p1, plane1.R, "white")
+        print
+        print "Rotate point p2 about p1->p1+plane1.nuv 30 degrees"
+        p19 = PointRotate3D(p2, p1, plane1.nuv, math.radians(30))
+        print "New point (p19): %s" % (p19)
+        add_cc(Point(p19), 2, "red")
+                            
+    #planeTest()
+    
+    def polytest():
+        param.Warning("Select points representing a valid closed polygon")
+        ptList = []
+        ccList = []
+        while True:
+            if not ptList:
+                pt = PointLocate("Select first polygon vertex point")
+                if pt:
+                    ptList.append(pt)
+                    ccList.append(add_cc(pt,2,"Red"))
+                else:
+                    return
+            else:
+                pt = PointLocate("Select polygon vertex point #%d" % (len(ptList)+1), pt)
+                if pt:
+                    ptList.append(pt)
+                    ccList.append(add_cc(pt,2,"Magenta"))
+                else:
+                    break
+        if len(ptList) < 3:
+            param.Warning("There must be at least three points to make a polygon.")
+            remove_cc(ccList)
+            return
+        poly = Polygon(*ptList)
+        while True:
+            pt1 = PointLocate("Select a point to test inside polygon.")
+            if not pt1:
+                return
+            ccList.append(add_cc(pt1,2,"Yellow"))
+            b = poly.inside(pt1)
+            ccList.append(add_cc(Point(poly.pt1),2,"Yellow"))
+            if b:
+                param.Warning("Point is INSIDE")
+            else:
+                param.Warning("Point is OUTSIDE")
+            remove_cc([ccList[-1], ccList[-2]])
+    # polytest()
+
+    def translate_test():
+        pt1 = PointLocate("Pick plane point 1")
+        add_cc(pt1, 1, "red")
+        pt2 = PointLocate("Pick plane point 2", pt1)
+        add_cc(pt2, 1, "green")
+        pt3 = PointLocate("Pick plane point 3", pt1)
+        add_cc(pt3, 1, "cyan")
+        
+        pt4 = PointLocate("Pick another arbitrary point")
+        add_cc(pt4, 1, "white")
+
+        pt5 = PointLocate("Pick another arbitrary point (pt5)")
+        add_cc(pt5, 1, "green")
+
+        plane1 = Plane(pt1, pt2, pt3, name='translate_test')
+        print plane1.name
+        ptLocal = plane1.transToLocal(pt4)
+        print "Arbitrary point\n    %s" % (pt4)
+        print "Arbitrary point translated into local coordinates\n    %s" % (ptLocal)
+        print "Arbitrary point translated into local coordinates reference pt5\n    %s" % (plane1.transToLocal(pt4, pt5))
+        print "Local point translated to global coordinates\n    %s" % (plane1.transToGlobal(ptLocal))
+        print "*"*80
+        print "Arbitrary point\n    %s" % (pt4)
+        print "Arbitrary point translated in local coordinates 10,10,10\n    %s" % (plane1.transXYZToGlobal(10,10,10,Point3D.Point3D(pt4)))'''
+        
+    #translate_test()
+    '''
+    output = []
+    for r in range(1, 4):
+        for phi in range(-2, 2):
+            p = SPt3D(r, 0, phi)
+            output.append("%s | %s | %s" % (p, p.toPoint3D(), pointToSPt3D(p.toPoint3D())))
+    
+    print "\n".join(output)'''
+
+
+    def angle_between_mem_web_planes(mem1, mem2):
+        # mem1 is supporting member
+        # mem2 is supported member
+        line1 = Line(mem1.left.location, mem1.right.location)
+        line2 = Line(mem2.left.location, mem2.right.location)
+        intersect1, intersect2 = line1.inters(line2)
+        # web planes
+        plane1 = Plane(intersect1, getMemXYZ(mem1)[2])
+        plane2 = Plane(intersect2, getMemXYZ(mem2)[2])
+        intersect3 = plane1.intersLinePlane(line2)
+        LbtwPlanes = plane1.angleBetweenPlanes(plane2)
+        p1 = mem1.left.location - mem1.trans_to_local(mem2.left.location.x, 0.0, mem2.left.location.y)
+        p2 = mem1.left.location - mem1.trans_to_local(mem2.right.location.x, 0.0, mem2.right.location.y)
+        print p1, p2
+        LbtwPlanes2 = atan2(p2.y-p1.y, p2.x-p1.x)
+        print intersect1, intersect2
+        print intersect3
+        print degrees(LbtwPlanes)
+        print degrees(LbtwPlanes2)
+
+    '''param.ClearSelection()
+    mem1 = MemberLocate("Select member 1")
+    mem2 = MemberLocate("Select member 2")
+    angle_between_mem_web_planes(mem1, mem2)
+    param.ClearSelection()'''
+
+    def test_parallelLines():
+        param.ClearSelection()
+        mem1 = MemberLocate("Select member 1")
+        mem2 = MemberLocate("Select member 2")
+        param.ClearSelection()
+        line1 = Line(mem1.left.location, mem1.right.location)
+        line2 = Line(mem2.left.location, mem2.right.location)
+        if line1.isParallel(line2):
+            print "Members are parallel"
+        else:
+            print "Members are not parallel"
+    #test_parallelLines()
+
+    def angle_test():
+        pt1 = PointLocate("Pick Line1 point 1")
+        add_cc(pt1, 1, "red")
+        pt2 = PointLocate("Pick Line1 point 2", pt1)
+        add_cc(pt2, 1, "green")
+        pt3 = PointLocate("Pick Line2 point 1")
+        add_cc(pt3, 1, "cyan")
+        pt4 = PointLocate("Pick Line2 point 2", pt3)
+        add_cc(pt4, 1, "white")
+        print "Angle between lines: %s degrees" % (degrees(Line(pt1, pt2).angle(Line(pt3, pt4))))
+
+        p1 = Point(0,0,0)
+        p2 = Point(100,0,0)
+        p3 = Point(0,100,0)
+        p4 = Point(0,-100,0)
+        print "Angle between lines: %s degrees" % (degrees(Line(p1, p2).angle(Line(p1, p3))))
+        print "Angle between lines: %s degrees" % (degrees(Line(p1, p2).angle(Line(p1, p4))))
+    #angle_test()
+
+
+
+
+
+
+
+    
+    

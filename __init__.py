@@ -26,6 +26,7 @@
 
 
 
+
 bl_info = {
     "name": "3D Print Toolbox",
     "description": "Utilities for 3D printing",
@@ -59,10 +60,11 @@ else:
         EnumProperty,
         PointerProperty,
     )
-
+    # normal convention is "from . file_name import CLASS_NAME"
     from . import (
         ui,
         operators,
+        mesh_helpers,
     )
 
 
@@ -100,14 +102,14 @@ class SceneProperties(PropertyGroup):
         name="Thickness",
         description="Minimum thickness",
         subtype='DISTANCE',
-        default=0.001,  # 1mm
+        default=0.01,  # 0.01mm
         min=0.0,
-        max=10.0,
+        max=100.0,
     )
     threshold_zero: FloatProperty(
         name="Threshold",
         description="Limit for checking zero area/length",
-        default=0.0001,
+        default=0.01,
         precision=5,
         min=0.0,
         max=0.2,
@@ -134,14 +136,47 @@ class SceneProperties(PropertyGroup):
         min=0.0,
         max=math.radians(90.0),
     )
+    proportion_disconnected: FloatProperty(
+        name="Proportion",
+        subtype='PERCENTAGE',
+        default=10,
+        min=0.0,
+        max=100.0,
+    )
+#    volume_uncured: FloatProperty(
+#        name="Uncured",
+#        subtype='VOLUME',
+#        default=10.0,  # cubic mm
+#        min=0.0,
+#        max=100.0,
+#    )
 
 
+    
+
+
+# Notes on class naming conventions (since Blender 2.8)
+# see: https://wiki.blender.org/wiki/Reference/Release_Notes/2.80/Python_API/Addons for the naming convention
+
+#Classes that contain properties from bpy.props use Python's type annotations and should be assigned with a colon, not an =
+#class MyOperator(Operator):
+#    value: IntProperty()
+
+# Add-on's should assign their classes to a tuple or list and register/unregister them directly (see functions below).
+#Module names are the name of the file (as per normal Python)
+#Class names within each module *MUST* be: UPPER_CASE_{SEPARATOR}_mixed_case
+#where separator is one of:-
+#Header -> _HT_
+#Menu -> _MT_
+#Operator -> _OT_
+#Panel -> _PT_
+#UIList -> _UL_
 
 classes = (
     SceneProperties,
 
     ui.VIEW3D_PT_print3d_analyze,
-    ui.VIEW3D_PT_print3d_cleanup,
+#    ui.VIEW3D_PT_print3d_meshlab,
     ui.VIEW3D_PT_print3d_transform,
     ui.VIEW3D_PT_print3d_export,
     ui.VIEW3D_PT_print3d_workarea,
@@ -149,6 +184,8 @@ classes = (
     operators.MESH_OT_print3d_info_volume,
     operators.MESH_OT_print3d_info_area,
     operators.MESH_OT_print3d_check_degenerate,
+    operators.MESH_OT_print3d_check_disconnected,
+#    operators.MESH_OT_print3d_check_resin_traps,
     operators.MESH_OT_print3d_check_distorted,
     operators.MESH_OT_print3d_check_solid,
     operators.MESH_OT_print3d_check_intersections,
@@ -157,6 +194,8 @@ classes = (
     operators.MESH_OT_print3d_check_overhang,
     operators.MESH_OT_print3d_check_all,
 
+    operators.MESH_OT_print3d_clean_notdefined,
+
     operators.MESH_OT_print3d_clean_distorted,
     operators.MESH_OT_print3d_clean_thin,
     operators.MESH_OT_print3d_clean_non_manifold,
@@ -164,13 +203,12 @@ classes = (
     operators.MESH_OT_print3d_clean_degenerate,
     operators.MESH_OT_print3d_clean_doubles,
 
-## not sure why, but these aren't registering properly...    
     operators.MESH_OT_print3d_clean_loose,
-#    operators.MESH_OT_print3d_clean_non_planars,
-#    operators.MESH_OT_print3d_clean_concaves,
-#    operators.MESH_OT_print3d_clean_triangulates,
-#    operators.MESH_OT_print3d_clean_holes,
-#    operators.MESH_OT_print3d_clean_limited,
+    operators.MESH_OT_print3d_clean_non_planars,
+    operators.MESH_OT_print3d_clean_concaves,
+    operators.MESH_OT_print3d_clean_triangulates,
+    operators.MESH_OT_print3d_clean_holes,
+    operators.MESH_OT_print3d_clean_limited,
 
 
     operators.MESH_OT_print3d_select_report,

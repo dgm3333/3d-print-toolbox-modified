@@ -26,6 +26,38 @@ import bmesh
 
 from . import report
 
+#Misc notes:
+#row = layout.row() - creates a new line in the interface
+#row = col.row(align=True)
+
+
+'''
+def MessageBox(bpy.types.Operator):
+    bl_idname = "message.messagebox"
+    bl_label = ""
+ 
+    message = bpy.props.StringProperty(
+        name = "message",
+        description = "message",
+        default = ''
+    )
+ 
+    def execute(self, context):
+        self.report({'INFO'}, self.message)
+        print(self.message)
+        return {'FINISHED'}
+ 
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width = 400)
+ 
+    def draw(self, context):
+        self.layout.label(self.message)
+        self.layout.label("")
+'''
+
+
+
+
 
 class View3DPrintPanel:
     bl_category = "3D-Print"
@@ -58,7 +90,7 @@ class VIEW3D_PT_print3d_analyze(View3DPrintPanel, Panel):
             box = layout.box()
             col = box.column()
 
-            for i, (text, data) in enumerate(info):
+            for i, (text, data, cls) in enumerate(info):
                 if is_edit and data and data[1]:
                     bm_type, _bm_array = data
                     row = col.row(align=True)
@@ -91,88 +123,100 @@ class VIEW3D_PT_print3d_analyze(View3DPrintPanel, Panel):
         #row.operator("mesh.print3d_show_hide_beta_items", text="", icon="LIGHT_DATA",).index = i
 
 
-        #TODO: add the stats here when button clicked rather than down in the report section
-        row.operator("mesh.print3d_info_volume", text="Volume: TODO")
-#        row.prop(print_3d, "area", text="")
-        row.operator("mesh.print3d_info_area", text="Area: TODO")
-#        row.prop(print_3d, "area", text="")
 
-        layout.label(text="Checks")
         col = layout.column(align=True)
-        col.operator("mesh.print3d_check_solid", text="Solid")
-        col.operator("mesh.print3d_check_intersect", text="Intersections")
         row = col.row(align=True)
-        row.operator("mesh.print3d_check_degenerate", text="Degenerate")
+        row.label(text="Checks")
+#        row.operator("mesh.print3d_check_clean_help", text="", icon="QUESTION",)
+        row.operator("mesh.print3d_check_solid", text="", icon="QUESTION",)
+        row = col.row(align=True)
+        layout.operator("mesh.print3d_check_all", text="Check All")
+
+      # layout.column starts a new block
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        row.operator("mesh.print3d_check_solid", text="Solid / Manifold")
+        row.operator("mesh.print3d_clean_non_manifold", text="", icon="SHADERFX",)
+#        layout.operator("mesh.print3d_clean_non_manifold", text="Make Manifold")
+        row = col.row(align=True)
+        #TODO: add the stats here when button clicked rather than down in the report section
+        row.operator("mesh.print3d_info_volume", text="    Volume=TODO")
+        row.prop(print_3d, "area", text="")
+        row = col.row(align=True)
+        row.operator("mesh.print3d_info_area", text="    Area=TODO")
+        row.prop(print_3d, "area", text="")
+        
+        row = col.row(align=True)
+        row.operator("mesh.print3d_check_intersect", text="Intersections")
+
+        row = col.row(align=True)
+        row.operator("mesh.print3d_check_degenerate", text="Min. Size")
         row.prop(print_3d, "threshold_zero", text="")
+        row.operator("mesh.print3d_clean_degenerate", text="", icon="SHADERFX",)
+#        row.operator("mesh.print3d_clean_degenerate", text="Dissolve Smalls")
+
+        row = col.row(align=True)
+        row.operator("mesh.print3d_clean_doubles", text="Remove Doubles")
+
         row = col.row(align=True)
         row.operator("mesh.print3d_check_distort", text="Distorted")
         row.prop(print_3d, "angle_distort", text="")
+        row.operator("mesh.print3d_clean_distorted", text="", icon="SHADERFX",)
+#        row.operator("mesh.print3d_clean_distorted", text="Distorted")
+
         row = col.row(align=True)
         row.operator("mesh.print3d_check_thick", text="Thickness")
         row.prop(print_3d, "thickness_min", text="")
+        row.operator("mesh.print3d_clean_thin", text="", icon="SHADERFX",)
+#        row.operator("mesh.print3d_clean_thin", text="Wall Thickness")
+
         row = col.row(align=True)
         row.operator("mesh.print3d_check_sharp", text="Edge Sharp")
         row.prop(print_3d, "angle_sharp", text="")
+
+#        row = col.row(align=True)
+#        row.operator("mesh.print3d_check_disconnected", text="Disconnected")
+#        row.prop(print_3d, "proportion_disconnected", text="")
+
         row = col.row(align=True)
         row.operator("mesh.print3d_check_overhang", text="Overhang")
         row.prop(print_3d, "angle_overhang", text="")
-        row = col.row(align=True)
-        layout.label(text="TODO:")
-        row = col.row(align=True)
-        layout.label(text="print3d_check_islands+orphans")        # ideally use the meshlab filter "select small disconnected components" to save extra coding
-        row = col.row(align=True)
-        layout.label(text="print3d_check_thin+weak")        # flag areas too small for robust real-world performance
-        row = col.row(align=True)
-        layout.label(text="print3d_check_hollows+resin_traps")            # looking for hollow structures internally which may trap uncured resin and would be better cured
-        row = col.row(align=True)
-        layout.label(text="print3d_check_touching_boundaries")  # can't remember why I wanted to do this - probably just delete it
 
-        layout.operator("mesh.print3d_check_all", text="Check All")
+        row = col.row(align=True)
+        row.operator("mesh.print3d_check_resin_traps", text="Resin Traps")
+        row.prop(print_3d, "volume_uncured", text="")
+
+#        row = col.row(align=True)
+#        layout.label(text="print3d_check_touching_boundaries")  # can't remember why I wanted to do this - probably just delete it
+
+
+        row = col.row(align=True)
+        row.operator("mesh.print3d_clean_loose", text="Delete Loose")
+        row = col.row(align=True)
+        row.operator("mesh.print3d_clean_non_planars", text="Split Non Planar Faces")
+        row = col.row(align=True)
+        row.operator("mesh.print3d_clean_concaves", text="Split Concave Faces")
+        row = col.row(align=True)
+        row.operator("mesh.print3d_clean_triangulates", text="Triangulate Faces")
+        row = col.row(align=True)
+        row.operator("mesh.print3d_clean_holes", text="Fill Holes")
+        row = col.row(align=True)
+        row.operator("mesh.print3d_clean_limited", text="Simplify Mesh (=Limited Dissolve)")
+
 
         self.draw_report(context)
 
 
-class VIEW3D_PT_print3d_cleanup(View3DPrintPanel, Panel):
-    bl_label = "Clean Up"
+class VIEW3D_PT_print3d_meshlab(View3DPrintPanel, Panel):
+    bl_label = "Use MeshLab Tools"
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
         layout = self.layout
-        layout.label(text="TODO: Merge fully with Results (+/- Checks")
+        layout.label(text="TODO: link to pymeshlab")
 
         print_3d = context.scene.print_3d
 
-        row = layout.row(align=True)
-        row.operator("mesh.print3d_clean_distorted", text="Distorted")
-        row.prop(print_3d, "angle_distort", text="")
-        row = layout.row(align=True)
-        layout.operator("mesh.print3d_clean_non_manifold", text="Make Manifold")
-        row = layout.row(align=True)
-
-        #Agnieszka Pas Cleaners
-        layout.operator("mesh.print3d_clean_degenerate", text="Dissolve Degenerate")
-        row = layout.row(align=True)
-        layout.operator("mesh.print3d_clean_doubles", text="Remove Doubles")
-        layout.operator("mesh.print3d_clean_loose", text="Delete Loose")
-        layout.operator("mesh.print3d_clean_non_planars", text="Split Non Planar Faces")
-        layout.operator("mesh.print3d_clean_concaves", text="Split Concave Faces")
-        layout.operator("mesh.print3d_clean_triangulates", text="Triangulate Faces")
-        layout.operator("mesh.print3d_clean_holes", text="Fill Holes")
-        layout.operator("mesh.print3d_clean_limited", text="Simplify Mesh (Limited Dissolve)")
-
-        layout.label(text="TODO:")
-        layout.label(text="print3d_clean_resin_traps")
-        layout.label(text="print3d_clean_thin")
-        layout.label(text="print3d_clean_fix_orphans")
-        layout.label(text="print3d_clean_normals_out")
-
-        '''
-
-        # XXX TODO
-
-        layout.operator("mesh.print3d_clean_thin", text="Wall Thickness")
-        layout.operator("mesh.print3d_clean_normals_out", text="Normals to Outside")
-        '''
 
 
 class VIEW3D_PT_print3d_transform(View3DPrintPanel, Panel):
@@ -194,6 +238,8 @@ class VIEW3D_PT_print3d_transform(View3DPrintPanel, Panel):
         layout.label(text="TODO: print3d_merge_selected_into_single_solid")
 
 #        row.operator("mesh.print3d_merge_selected_into_single_solid", text="Merge To Solid")
+
+
 
 class VIEW3D_PT_print3d_export(View3DPrintPanel, Panel):
     bl_label = "Export"
@@ -234,9 +280,10 @@ class VIEW3D_PT_print3d_workarea(View3DPrintPanel, Panel):
         layout.label(text="print3d_setup_printer_volume")
         layout.label(text="print3d_setup_printer_resolution")
 
-        '''
-        layout.operator("mesh.print3d_setup_illuminate", text="Illuminate Visible")
-        layout.operator("mesh.print3d_setup_printer_bed", text="Add Printer Bed")
-        layout.operator("mesh.print3d_setup_printer_volume", text="Add Printer Volume")
-        layout.operator("mesh.print3d_setup_printer_resolution", text="Set Printer Resolution")
-        '''
+
+#        layout.operator("mesh.print3d_setup_illuminate", text="Illuminate Visible")
+#        layout.operator("mesh.print3d_setup_printer_bed", text="Add Printer Bed")
+#        layout.operator("mesh.print3d_setup_printer_volume", text="Add Printer Volume")
+#        layout.operator("mesh.print3d_setup_printer_resolution", text="Set Printer Resolution")
+
+

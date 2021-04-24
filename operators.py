@@ -21,13 +21,38 @@
 # All Operator
 
 
+# core Blender properties are named with a bl_ prefix (so to avoid conflicts don't use this yourself )
+# Once a class is loaded you can access it from bpy.types, using the bl_idname rather than the classes original name.
+# a blender class can be executed by calling something like this:-
+#bpy.types.MESH_OT_print3d_clean_holes.execute()   # NB doesn't work...
+# see https://stackoverflow.com/questions/33903187/call-a-function-in-a-class-from-different-class/33903188
+
+
+#unclear matching between checks and cleaners
+#MESH_OT_print3d_check_intersections
+#MESH_OT_print3d_check_thick
+#MESH_OT_print3d_check_sharp
+#MESH_OT_print3d_check_overhang
+
+#class MESH_OT_print3d_clean_thin(Operator):
+#class MESH_OT_print3d_clean_degenerate(Operator):
+#class MESH_OT_print3d_clean_doubles(Operator):
+#class MESH_OT_print3d_clean_loose(Operator):
+
+
+
+
 import math
+#import winsound
+import traceback
 
 import bpy
 from bpy.types import Operator
 from bpy.props import (
+    StringProperty,
     IntProperty,
     FloatProperty,
+    BoolProperty,
 )
 import bmesh
 
@@ -128,11 +153,20 @@ def multiple_obj_warning(self, context):
     if len(context.selected_objects) > 1:
         self.report({"INFO"}, "Multiple selected objects. Only the active one will be evaluated")
 
+def elem_count(context):
+    bm = bmesh.from_edit_mesh(context.edit_object.data)
+    return len(bm.verts), len(bm.edges), len(bm.faces)
+
+def setup_environment():
+    """set the mode as edit, select mode as vertices, and reveal hidden vertices"""
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_mode(type='VERT')
+    bpy.ops.mesh.reveal()
 
 class MESH_OT_print3d_check_solid(Operator):
     bl_idname = "mesh.print3d_check_solid"
     bl_label = "3D-Print Check Solid"
-    bl_description = "Check for geometry is solid (has valid inside/outside) and correct normals"
+    bl_description = "Check for solid geometry. Must have valid inside/outside (every edge is linked to exactly 2 faces) and correct normals (all directed outside of solid)"
 
     @staticmethod
     def main_check(obj, info):
@@ -146,8 +180,8 @@ class MESH_OT_print3d_check_solid(Operator):
             (i for i, ele in enumerate(bm.edges) if ele.is_manifold and (not ele.is_contiguous)),
         )
 
-        info.append((f"Non Manifold Edge: {len(edges_non_manifold)}", (bmesh.types.BMEdge, edges_non_manifold)))
-        info.append((f"Bad Contig. Edges: {len(edges_non_contig)}", (bmesh.types.BMEdge, edges_non_contig)))
+        info.append((f"Non Manifold Edge: {len(edges_non_manifold)}", (bmesh.types.BMEdge, edges_non_manifold), MESH_OT_print3d_clean_non_manifold))
+        info.append((f"Bad Contig. Edges: {len(edges_non_contig)}", (bmesh.types.BMEdge, edges_non_contig), MESH_OT_print3d_clean_non_manifold))
 
         bm.free()
 
@@ -163,7 +197,7 @@ class MESH_OT_print3d_check_intersections(Operator):
     @staticmethod
     def main_check(obj, info):
         faces_intersect = mesh_helpers.bmesh_check_self_intersect_object(obj)
-        info.append((f"Intersect Face: {len(faces_intersect)}", (bmesh.types.BMFace, faces_intersect)))
+        info.append((f"Intersect Face: {len(faces_intersect)}", (bmesh.types.BMFace, faces_intersect), MESH_OT_print3d_clean_distorted))
 
     def execute(self, context):
         return execute_check(self, context)
@@ -173,8 +207,8 @@ class MESH_OT_print3d_check_degenerate(Operator):
     bl_idname = "mesh.print3d_check_degenerate"
     bl_label = "3D-Print Check Degenerate"
     bl_description = (
-        "Check for degenerate geometry that may not print properly "
-        "(zero area faces, zero length edges)"
+        "Check for minimum component size ('degenerate geometry') that may not print properly "
+        "(zero/small area faces, zero/small length edges, TODO: include doubles (=very close vertices))"
     )
 
     @staticmethod
@@ -190,8 +224,8 @@ class MESH_OT_print3d_check_degenerate(Operator):
         faces_zero = array.array('i', (i for i, ele in enumerate(bm.faces) if ele.calc_area() <= threshold))
         edges_zero = array.array('i', (i for i, ele in enumerate(bm.edges) if ele.calc_length() <= threshold))
 
-        info.append((f"Zero Faces: {len(faces_zero)}", (bmesh.types.BMFace, faces_zero)))
-        info.append((f"Zero Edges: {len(edges_zero)}", (bmesh.types.BMEdge, edges_zero)))
+        info.append((f"Zero Area Faces: {len(faces_zero)}", (bmesh.types.BMFace, faces_zero), MESH_OT_print3d_clean_degenerate))
+        info.append((f"Zero Length Edges: {len(edges_zero)}", (bmesh.types.BMEdge, edges_zero), MESH_OT_print3d_clean_degenerate))
 
         bm.free()
 
@@ -220,7 +254,7 @@ class MESH_OT_print3d_check_distorted(Operator):
             (i for i, ele in enumerate(bm.faces) if mesh_helpers.face_is_distorted(ele, angle_distort))
         )
 
-        info.append((f"Non-Flat Faces: {len(faces_distort)}", (bmesh.types.BMFace, faces_distort)))
+        info.append((f"Non-Flat Faces: {len(faces_distort)}", (bmesh.types.BMFace, faces_distort), MESH_OT_print3d_clean_distorted))
 
         bm.free()
 
@@ -228,11 +262,82 @@ class MESH_OT_print3d_check_distorted(Operator):
         return execute_check(self, context)
 
 
+
+
+class MESH_OT_print3d_check_disconnected(Operator):
+    bl_idname = "mesh.print3d_check_disconnected"
+    bl_label = "3D-Print Check for Disconnected Components"
+    bl_description = "Check for Islands and Orphans - ie disconnected small parts of the total object"
+
+    @staticmethod
+    def main_check(obj, info):
+
+        self.report({'INFO'}, "SORRY NO SEARCH FOR DISCONNECTED COMPONENTS CODED YET")
+        # ideally use the meshlab filter "select small disconnected components" to save extra coding
+
+    def execute(self, context):
+        return execute_check(self, context)
+
+class print3d_check_resin_traps(Operator):
+    bl_idname = "mesh.print3d_check_unfilled_islands"
+    bl_label = "3D-Print Check for internal but incompletely cured spots"
+    bl_description = "Check for internal but incompletely cured spots which will not be able to drain externally"
+
+    @staticmethod
+    def main_check(obj, info):
+
+        self.report({'INFO'}, "SORRY NO SEARCH FOR RESIN ISLANDS CODED YET")
+        # ideally use the meshlab filter "select small disconnected components" to save extra coding
+
+#        import array
+
+#        scene = bpy.context.scene
+#        print_3d = scene.print_3d
+#        angle_distort = print_3d.angle_distort
+
+#        bm = mesh_helpers.bmesh_copy_from_object(obj, transform=True, triangulate=False)
+#        bm.normal_update()
+
+#        faces_distort = array.array(
+#            'i',
+#            (i for i, ele in enumerate(bm.faces) if mesh_helpers.face_is_distorted(ele, angle_distort))
+#        )
+
+#        info.append((f"Non-Flat Faces: {len(faces_distort)}", (bmesh.types.BMFace, faces_distort), MESH_OT_print3d_clean_distorted))
+
+#        bm.free()
+
+    def execute(self, context):
+        return execute_check(self, context)
+
+
+class MESH_OT_print3d_clean_notdefined(Operator):
+    bl_idname = "mesh.print3d_clean_notdefined"
+    bl_label = "3D-Print No Defined Cleaner"
+    bl_description = "Placeholder when cleaner class not available"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        # TODO
+        # This needs to search for faces which have no backing (ie are a single face thick)
+        # also for any areas which are too thin for the resolution of the printer
+        #print("")
+        #bpy.context.window_manager.popup_menu("CLEAN THIN", title="Action", icon='ERROR')
+        self.report({'INFO'}, "SORRY NO AUTOMATIC CLEANER AVAILABLE")
+        #The color depends on the type enum: INFO gets green, WARNING light red, and ERROR dark red. I don't see reference to any direct output to Info window, other than this method.
+
+
+        #winsound.Beep(2500, 1000)
+
+        return {'FINISHED'}
+
+
 class MESH_OT_print3d_check_thick(Operator):
     bl_idname = "mesh.print3d_check_thick"
     bl_label = "3D-Print Check Thickness"
     bl_description = (
         "Check geometry is above the minimum thickness preference "
+        " = identify features which are too thin for robust real-world performance"
         "(relies on correct normals)"
     )
 
@@ -242,7 +347,7 @@ class MESH_OT_print3d_check_thick(Operator):
         print_3d = scene.print_3d
 
         faces_error = mesh_helpers.bmesh_check_thick_object(obj, print_3d.thickness_min)
-        info.append((f"Thin Faces: {len(faces_error)}", (bmesh.types.BMFace, faces_error)))
+        info.append((f"Thin Faces: {len(faces_error)}", (bmesh.types.BMFace, faces_error), MESH_OT_print3d_clean_notdefined))
 
     def execute(self, context):
         return execute_check(self, context)
@@ -267,7 +372,7 @@ class MESH_OT_print3d_check_sharp(Operator):
             if ele.is_manifold and ele.calc_face_angle_signed() > angle_sharp
         ]
 
-        info.append((f"Sharp Edge: {len(edges_sharp)}", (bmesh.types.BMEdge, edges_sharp)))
+        info.append((f"Sharp Edge: {len(edges_sharp)}", (bmesh.types.BMEdge, edges_sharp), MESH_OT_print3d_clean_notdefined))
         bm.free()
 
     def execute(self, context):
@@ -303,7 +408,7 @@ class MESH_OT_print3d_check_overhang(Operator):
             if z_down_angle(ele.normal, 4.0) < angle_overhang
         ]
 
-        info.append((f"Overhang Face: {len(faces_overhang)}", (bmesh.types.BMFace, faces_overhang)))
+        info.append((f"Overhang Face: {len(faces_overhang)}", (bmesh.types.BMFace, faces_overhang), MESH_OT_print3d_clean_notdefined))
         bm.free()
 
     def execute(self, context):
@@ -339,10 +444,33 @@ class MESH_OT_print3d_check_all(Operator):
         return {'FINISHED'}
 
 
+
+
+class MESH_OT_print3d_clean_notdefined(Operator):
+    bl_idname = "mesh.print3d_clean_notdefined"
+    bl_label = "3D-Print No Defined Cleaner"
+    bl_description = "Placeholder when cleaner class not available"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        # TODO
+        # This needs to search for faces which have no backing (ie are a single face thick)
+        # also for any areas which are too thin for the resolution of the printer
+        #print("")
+        #bpy.context.window_manager.popup_menu("CLEAN THIN", title="Action", icon='ERROR')
+        self.report({'INFO'}, "SORRY NO AUTOMATIC CLEANER AVAILABLE")
+        #The color depends on the type enum: INFO gets green, WARNING light red, and ERROR dark red. I don't see reference to any direct output to Info window, other than this method.
+
+
+        #winsound.Beep(2500, 1000)
+
+        return {'FINISHED'}
+
+
 class MESH_OT_print3d_clean_distorted(Operator):
     bl_idname = "mesh.print3d_clean_distorted"
     bl_label = "3D-Print Clean Distorted"
-    bl_description = "Tessellate distorted faces"
+    bl_description = "Triangulate distorted faces"
     bl_options = {'REGISTER', 'UNDO'}
 
     angle: FloatProperty(
@@ -393,11 +521,12 @@ class MESH_OT_print3d_clean_non_manifold(Operator):
     )
 
     def execute(self, context):
+        context = bpy.context
         self.context = context
         mode_orig = context.mode
 
-        self.setup_environment()
-        bm_key_orig = self.elem_count(context)
+        setup_environment()
+        bm_key_orig = elem_count(context)
 
         self.delete_loose()
         self.delete_interior()
@@ -406,7 +535,7 @@ class MESH_OT_print3d_clean_non_manifold(Operator):
         self.fix_non_manifold(context, self.sides)  # may take a while
         self.make_normals_consistently_outwards()
 
-        bm_key = self.elem_count(context)
+        bm_key = elem_count(context)
 
         if mode_orig != 'EDIT_MESH':
             bpy.ops.object.mode_set(mode='OBJECT')
@@ -419,17 +548,17 @@ class MESH_OT_print3d_clean_non_manifold(Operator):
 
         return {'FINISHED'}
 
-    @staticmethod
-    def elem_count(context):
-        bm = bmesh.from_edit_mesh(context.edit_object.data)
-        return len(bm.verts), len(bm.edges), len(bm.faces)
+#    @staticmethod
+#    def elem_count(context):
+#        bm = bmesh.from_edit_mesh(context.edit_object.data)
+#        return len(bm.verts), len(bm.edges), len(bm.faces)
 
-    @staticmethod
-    def setup_environment():
-        """set the mode as edit, select mode as vertices, and reveal hidden vertices"""
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_mode(type='VERT')
-        bpy.ops.mesh.reveal()
+#    @staticmethod
+#    def setup_environment():
+#        """set the mode as edit, select mode as vertices, and reveal hidden vertices"""
+#        bpy.ops.object.mode_set(mode='EDIT')
+#        bpy.ops.mesh.select_mode(type='VERT')
+#        bpy.ops.mesh.reveal()
 
     @staticmethod
     def remove_doubles(threshold):
@@ -533,6 +662,13 @@ class MESH_OT_print3d_clean_thin(Operator):
         # TODO
         # This needs to search for faces which have no backing (ie are a single face thick)
         # also for any areas which are too thin for the resolution of the printer
+        #print("")
+        #bpy.context.window_manager.popup_menu("CLEAN THIN", title="Action", icon='ERROR')
+        self.report({'INFO'}, "CLEAN THIN")
+        #The color depends on the type enum: INFO gets green, WARNING light red, and ERROR dark red. I don't see reference to any direct output to Info window, other than this method.
+
+
+        #winsound.Beep(2500, 1000)
 
         return {'FINISHED'}
 
@@ -551,6 +687,7 @@ class MESH_OT_print3d_clean_degenerate(Operator):
     )
 
     def execute(self, context):
+        context = bpy.context
         self.context = context
         mode_orig = context.mode
 
@@ -591,11 +728,12 @@ class MESH_OT_print3d_clean_doubles(Operator):
     threshold: FloatProperty(
         name="Merge Distance",
         description="Minimum distance between elements to merge",
-        default=0.0001,
+        default=0.01,
         step=1
     )
 
     def execute(self, context):
+        context = bpy.context
         self.context = context
         mode_orig = context.mode
 
@@ -626,25 +764,12 @@ class MESH_OT_print3d_clean_doubles(Operator):
         bpy.ops.mesh.select_all(action='SELECT')
         bpy.ops.mesh.remove_doubles(threshold=threshold)
 
-class MESH_OT_print3d_clean_loose(Operator):
-    bl_idname = "mesh.print3d_clean_loose"
-    bl_label = "3D-Print Clean Loose"
-    bl_description = "Clean Loose TESTING"
-    bl_options = {'REGISTER', 'UNDO'}
 
-    def execute(self, context):
-        # TODO
-
-        return {'FINISHED'}
-
-
-
-'''
 
 class MESH_OT_print3d_clean_loose(Operator):
     bl_idname = "mesh.print3d_clean_loose"
     bl_label = "Delete Loose"
-    bl_description = "Delete loose vertices, edges or faces"
+    bl_description = "Delete unconnected ('loose') vertices, edges or faces"
     bl_options = {'REGISTER', 'UNDO'}
 
     use_verts: BoolProperty(
@@ -666,6 +791,7 @@ class MESH_OT_print3d_clean_loose(Operator):
     )
 
     def execute(self, context):
+        context = bpy.context
         self.context = context
         mode_orig = context.mode
 
@@ -696,20 +822,8 @@ class MESH_OT_print3d_clean_loose(Operator):
         bpy.ops.mesh.select_all(action='SELECT')
         bpy.ops.mesh.delete_loose(use_verts=use_verts, use_edges=use_edges, use_faces=use_faces)
 
-'''
 
-class MESH_OT_print3d_clean_non_planars(Operator):
-    bl_idname = "mesh.print3d_clean_non_planars"
-    bl_label = "Split Non Planar Faces"
-    bl_description = "Split non-planar faces that exceed the angle threshold"
-    bl_options = {'REGISTER', 'UNDO'}
 
-    def execute(self, context):
-        # TODO
-
-        return {'FINISHED'}
-
-'''        
 class MESH_OT_print3d_clean_non_planars(Operator):
     bl_idname = "mesh.print3d_clean_non_planars"
     bl_label = "Split Non Planar Faces"
@@ -726,6 +840,7 @@ class MESH_OT_print3d_clean_non_planars(Operator):
     )
 
     def execute(self, context):
+        context = bpy.context
         self.context = context
         mode_orig = context.mode
 
@@ -756,7 +871,7 @@ class MESH_OT_print3d_clean_non_planars(Operator):
         bpy.ops.mesh.select_all(action='SELECT')
         bpy.ops.mesh.vert_connect_nonplanar(angle_limit=angle_limit)
         # bpy.ops.ui.reports_to_textblock()
-'''
+
 
 class MESH_OT_print3d_clean_concaves(Operator):
     bl_idname = "mesh.print3d_clean_concaves"
@@ -765,18 +880,7 @@ class MESH_OT_print3d_clean_concaves(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        # TODO
-
-        return {'FINISHED'}
-
-'''        
-class MESH_OT_print3d_clean_concaves(Operator):
-    bl_idname = "mesh.print3d_clean_concaves"
-    bl_label = "Split Concave Faces"
-    bl_description = "Make all faces convex"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
+        context = bpy.context
         self.context = context
         mode_orig = context.mode
 
@@ -807,7 +911,6 @@ class MESH_OT_print3d_clean_concaves(Operator):
         bpy.ops.mesh.select_all(action='SELECT')
         bpy.ops.mesh.vert_connect_concave()
 
-'''
 
 class MESH_OT_print3d_clean_triangulates(Operator):
     bl_idname = "mesh.print3d_clean_triangulates"
@@ -816,18 +919,7 @@ class MESH_OT_print3d_clean_triangulates(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        # TODO
-
-        return {'FINISHED'}
-
-'''    
-class MESH_OT_print3d_clean_triangulates(Operator):
-    bl_idname = "mesh.print3d_clean_triangulates"
-    bl_label = "Triangulate Faces"
-    bl_description = "Triangulate selected faces"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
+        context = bpy.context
         self.context = context
         mode_orig = context.mode
 
@@ -852,20 +944,8 @@ class MESH_OT_print3d_clean_triangulates(Operator):
 
         return {'FINISHED'}
 
-'''
 
-class MESH_OT_print3d_clean_holes(Operator):
-    bl_idname = "mesh.print3d_clean_holes"
-    bl_label = "Fill Holes"
-    bl_description = "Fill in holes (boundary edge loops)"
-    bl_options = {'REGISTER', 'UNDO'}
 
-    def execute(self, context):
-        # TODO
-
-        return {'FINISHED'}
-
-'''        
 class MESH_OT_print3d_clean_holes(Operator):
     bl_idname = "mesh.print3d_clean_holes"
     bl_label = "Fill Holes"
@@ -880,6 +960,7 @@ class MESH_OT_print3d_clean_holes(Operator):
     )
 
     def execute(self, context):
+        context = bpy.context
         self.context = context
         mode_orig = context.mode
 
@@ -910,20 +991,7 @@ class MESH_OT_print3d_clean_holes(Operator):
         bpy.ops.mesh.select_all(action='SELECT')
         bpy.ops.mesh.fill_holes(sides=sides)
 
-'''
 
-class MESH_OT_print3d_clean_limited(Operator):
-    bl_idname = "mesh.print3d_clean_limited"
-    bl_label = "Limited Dissolve"
-    bl_description = "Dissolve selected edges and verts, limited by the angle of surrounding geometry"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        # TODO
-
-        return {'FINISHED'}
-
-'''        
 
 class MESH_OT_print3d_clean_limited(Operator):
     bl_idname = "mesh.print3d_clean_limited"
@@ -947,6 +1015,7 @@ class MESH_OT_print3d_clean_limited(Operator):
     )
 
     def execute(self, context):
+        context = bpy.context
         self.context = context
         mode_orig = context.mode
 
@@ -977,7 +1046,7 @@ class MESH_OT_print3d_clean_limited(Operator):
         bpy.ops.mesh.dissolve_limited(angle_limit=angle, use_dissolve_boundaries=use_boundaries, delimit={'NORMAL'})
 
 
-'''
+
 
 '''
 # ------------------------------------
@@ -1033,7 +1102,7 @@ class MESH_OT_print3d_select_report(Operator):
     def execute(self, context):
         obj = context.edit_object
         info = report.info()
-        _text, data = info[self.index]
+        _text, data, cls = info[self.index]
         bm_type, bm_array = data
 
         bpy.ops.mesh.reveal()
@@ -1060,6 +1129,63 @@ class MESH_OT_print3d_trigger_clean(Operator):
 
     index: IntProperty()
 
+
+    use_export_texture: BoolProperty(
+        name="Copy Textures",
+        description="Copy textures on export to the output path",
+        default=False,
+    )
+    use_apply_scale: BoolProperty(
+        name="Apply Scale",
+        description="Apply scene scale setting on export",
+        default=False,
+    )
+    export_path: StringProperty(
+        name="Export Directory",
+        description="Path to directory where the files are created",
+        default="//",
+        maxlen=1024,
+        subtype="DIR_PATH",
+    )
+    thickness_min: FloatProperty(
+        name="Thickness",
+        description="Minimum thickness",
+        subtype='DISTANCE',
+        default=0.001,  # 1mm
+        min=0.0,
+        max=10.0,
+    )
+    threshold_zero: FloatProperty(
+        name="Threshold",
+        description="Limit for checking zero area/length",
+        default=0.01,
+        precision=5,
+        min=0.0,
+        max=0.2,
+    )
+    angle_distort: FloatProperty(
+        name="Angle",
+        description="Limit for checking distorted faces",
+        subtype='ANGLE',
+        default=math.radians(45.0),
+        min=0.0,
+        max=math.radians(180.0),
+    )
+    angle_sharp: FloatProperty(
+        name="Angle",
+        subtype='ANGLE',
+        default=math.radians(160.0),
+        min=0.0,
+        max=math.radians(180.0),
+    )
+    angle_overhang: FloatProperty(
+        name="Angle",
+        subtype='ANGLE',
+        default=math.radians(45.0),
+        min=0.0,
+        max=math.radians(90.0),
+    )
+
     _type_to_mode = {
         bmesh.types.BMVert: 'VERT',
         bmesh.types.BMEdge: 'EDGE',
@@ -1075,7 +1201,7 @@ class MESH_OT_print3d_trigger_clean(Operator):
     def execute(self, context):
         obj = context.edit_object
         info = report.info()
-        _text, data = info[self.index]
+        _text, data, cls = info[self.index]
         bm_type, bm_array = data
 
         bpy.ops.mesh.reveal()
@@ -1085,14 +1211,28 @@ class MESH_OT_print3d_trigger_clean(Operator):
         bm = bmesh.from_edit_mesh(obj.data)
         elems = getattr(bm, MESH_OT_print3d_select_report._type_to_attr[bm_type])[:]
 
+
+
         try:
             for i in bm_array:
                 elems[i].select_set(True)
+            try:
+                cls.execute(self, context)
+            #except Exception as e:
+            except:
+                #self.report({'WARNING'}, )
+                error_message = traceback.format_exc()
+                self.report({'WARNING'}, "Unable to trigger cleaner function: " + error_message)
+
         except:
             # possible arrays are out of sync
             self.report({'WARNING'}, "Report is out of date, re-run check")
 
         return {'FINISHED'}
+
+
+
+
 
 
 
