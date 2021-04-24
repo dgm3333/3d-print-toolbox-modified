@@ -46,6 +46,9 @@ if "bpy" in locals():
     importlib.reload(ui)
     importlib.reload(operators)
     importlib.reload(mesh_helpers)
+    importlib.reload(meshlab_integration)
+    importlib.reload(slicer)
+    importlib.reload(supports)
     if "export" in locals():
         importlib.reload(export)
 else:
@@ -65,10 +68,13 @@ else:
         ui,
         operators,
         mesh_helpers,
+        meshlab_integration,
+        slicer,
+        supports,
     )
 
 
-
+# subtype dependent on type. See: https://docs.blender.org/api/2.92/bpy.props.html#module-bpy.props
 class SceneProperties(PropertyGroup):
     export_format: EnumProperty(
         name="Format",
@@ -98,9 +104,28 @@ class SceneProperties(PropertyGroup):
         maxlen=1024,
         subtype="DIR_PATH",
     )
+    object_volume: FloatProperty(
+        name="Volume",
+        description="Volume of Selected Object",
+        unit="VOLUME",
+        default=0.0,
+        precision=3,
+        min=0.0,
+        max=999999,
+    )
+    object_area: FloatProperty(
+        name="Area",
+        description="Surface Area of Selected Object",
+        unit="AREA",
+        default=0.0,
+        precision=3,
+        min=0.0,
+        max=999999,
+    )
     thickness_min: FloatProperty(
         name="Thickness",
         description="Minimum thickness",
+        unit="LENGTH",
         subtype='DISTANCE',
         default=0.01,  # 0.01mm
         min=0.0,
@@ -108,9 +133,20 @@ class SceneProperties(PropertyGroup):
     )
     threshold_zero: FloatProperty(
         name="Threshold",
-        description="Limit for checking zero area/length",
+        description="Limit for minimum face area and edge length",
+        subtype='DISTANCE',
         default=0.01,
-        precision=5,
+        precision=3,
+        min=0.0,
+        max=0.2,
+    )
+    threshold_double: FloatProperty(
+        name="Threshold",
+        description="Limit for minimum vertex proximity",
+        unit="LENGTH",
+        subtype='DISTANCE',
+        default=0.01,
+        precision=3,
         min=0.0,
         max=0.2,
     )
@@ -143,13 +179,20 @@ class SceneProperties(PropertyGroup):
         min=0.0,
         max=100.0,
     )
-#    volume_uncured: FloatProperty(
-#        name="Uncured",
-#        subtype='VOLUME',
-#        default=10.0,  # cubic mm
-#        min=0.0,
-#        max=100.0,
-#    )
+    volume_uncured: FloatProperty(
+        name="Volume of Uncured Resin left within model",
+        unit="VOLUME",
+        default=0.0,
+        min=0.0,
+        max=99999.0,
+    )
+    pymeshlabAvailable: BoolProperty(
+        name="Has pymeshlab been installed",
+        description="Flag to enable MeshLab functions",
+        default=False,
+    )
+
+
 
 
     
@@ -176,7 +219,7 @@ classes = (
     SceneProperties,
 
     ui.VIEW3D_PT_print3d_analyze,
-#    ui.VIEW3D_PT_print3d_meshlab,
+    ui.VIEW3D_PT_print3d_meshlab,
     ui.VIEW3D_PT_print3d_transform,
     ui.VIEW3D_PT_print3d_export,
     ui.VIEW3D_PT_print3d_workarea,
@@ -184,8 +227,9 @@ classes = (
     operators.MESH_OT_print3d_info_volume,
     operators.MESH_OT_print3d_info_area,
     operators.MESH_OT_print3d_check_degenerate,
+    operators.MESH_OT_print3d_check_doubles,
     operators.MESH_OT_print3d_check_disconnected,
-#    operators.MESH_OT_print3d_check_resin_traps,
+#    operators.MESH_OT_print3d_check_unfilled_islands,
     operators.MESH_OT_print3d_check_distorted,
     operators.MESH_OT_print3d_check_solid,
     operators.MESH_OT_print3d_check_intersections,
@@ -194,10 +238,9 @@ classes = (
     operators.MESH_OT_print3d_check_overhang,
     operators.MESH_OT_print3d_check_all,
 
-    operators.MESH_OT_print3d_clean_notdefined,
+    operators.MESH_OT_print3d_class_notdefined,
 
     operators.MESH_OT_print3d_clean_distorted,
-    operators.MESH_OT_print3d_clean_thin,
     operators.MESH_OT_print3d_clean_non_manifold,
 
     operators.MESH_OT_print3d_clean_degenerate,
@@ -210,13 +253,22 @@ classes = (
     operators.MESH_OT_print3d_clean_holes,
     operators.MESH_OT_print3d_clean_limited,
 
+    operators.MESH_OT_print3d_trigger_clean,
 
     operators.MESH_OT_print3d_select_report,
-    operators.MESH_OT_print3d_trigger_clean,    
     operators.MESH_OT_print3d_scale_to_volume,
     operators.MESH_OT_print3d_scale_to_bounds,
 
     operators.MESH_OT_print3d_export,
+
+    meshlab_integration.MESH_OT_print3d_process_mesh_in_meshlab,
+
+    slicer.MESH_OT_print3d_slicer,
+
+    supports.MESH_OT_print3d_create_supports,
+
+
+
 )
 
 

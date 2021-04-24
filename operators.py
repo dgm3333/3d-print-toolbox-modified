@@ -43,7 +43,6 @@
 
 
 import math
-#import winsound
 import traceback
 
 import bpy
@@ -59,6 +58,8 @@ import bmesh
 from . import (
     mesh_helpers,
     report,
+    slicer,
+    supports,
 )
 
 
@@ -94,11 +95,14 @@ class MESH_OT_print3d_info_volume(Operator):
         if unit.system == 'METRIC':
             volume_cm = volume * (scale ** 3.0) / (0.01 ** 3.0)
             volume_fmt = "{} cm".format(clean_float(f"{volume_cm:.4f}"))
+            scene.print_3d.object_volume = float(volume_cm)
         elif unit.system == 'IMPERIAL':
             volume_inch = volume * (scale ** 3.0) / (0.0254 ** 3.0)
             volume_fmt = '{} "'.format(clean_float(f"{volume_inch:.4f}"))
+            scene.print_3d.object_volume = float(volume_inch)
         else:
             volume_fmt = clean_float(f"{volume:.8f}")
+            scene.print_3d.object_area = 0.0
 
         report.update((f"Volume: {volume_fmt}³", None))
 
@@ -123,11 +127,14 @@ class MESH_OT_print3d_info_area(Operator):
         if unit.system == 'METRIC':
             area_cm = area * (scale ** 2.0) / (0.01 ** 2.0)
             area_fmt = "{} cm".format(clean_float(f"{area_cm:.4f}"))
+            scene.print_3d.object_area = float(area_cm)
         elif unit.system == 'IMPERIAL':
             area_inch = area * (scale ** 2.0) / (0.0254 ** 2.0)
             area_fmt = '{} "'.format(clean_float(f"{area_inch:.4f}"))
+            scene.print_3d.object_area = float(area_inch)
         else:
             area_fmt = clean_float(f"{area:.8f}")
+            scene.print_3d.object_area = 0.0
 
         report.update((f"Area: {area_fmt}²", None))
 
@@ -208,7 +215,7 @@ class MESH_OT_print3d_check_degenerate(Operator):
     bl_label = "3D-Print Check Degenerate"
     bl_description = (
         "Check for minimum component size ('degenerate geometry') that may not print properly "
-        "(zero/small area faces, zero/small length edges, TODO: include doubles (=very close vertices))"
+        "(zero/small area faces, zero/small length edges"
     )
 
     @staticmethod
@@ -224,13 +231,111 @@ class MESH_OT_print3d_check_degenerate(Operator):
         faces_zero = array.array('i', (i for i, ele in enumerate(bm.faces) if ele.calc_area() <= threshold))
         edges_zero = array.array('i', (i for i, ele in enumerate(bm.edges) if ele.calc_length() <= threshold))
 
-        info.append((f"Zero Area Faces: {len(faces_zero)}", (bmesh.types.BMFace, faces_zero), MESH_OT_print3d_clean_degenerate))
-        info.append((f"Zero Length Edges: {len(edges_zero)}", (bmesh.types.BMEdge, edges_zero), MESH_OT_print3d_clean_degenerate))
+        info.append((f"v Small Faces: {len(faces_zero)}", (bmesh.types.BMFace, faces_zero), MESH_OT_print3d_clean_degenerate))
+        info.append((f"v Small Edges: {len(edges_zero)}", (bmesh.types.BMEdge, edges_zero), MESH_OT_print3d_clean_degenerate))
 
         bm.free()
 
     def execute(self, context):
         return execute_check(self, context)
+
+
+class MESH_OT_print3d_check_doubles(Operator):
+    bl_idname = "mesh.print3d_check_doubles"
+    bl_label = "Check for Close Vertices"
+    bl_description = "Check for Vertices in very close proximity ('Doubles')"
+
+    @staticmethod
+    def sort_x(n):
+        return n[2][0]
+
+    @staticmethod
+    def sort_y(n):
+        return n[2][1]
+
+    @staticmethod
+    def sort_z(n):
+        return n[2][1]
+
+    @staticmethod
+    def main_check(obj, info):
+        import array
+
+        #failing at verts_all.append, so drop out early pending bug check
+        verts_zero = array.array('i')
+        info.append((f"v Close Vertices: err", (bmesh.types.BMFace, verts_zero), MESH_OT_print3d_clean_doubles))
+        return
+
+
+        scene = bpy.context.scene
+        print_3d = scene.print_3d
+        threshold = print_3d.threshold_double
+
+        bm = mesh_helpers.bmesh_copy_from_object(obj, transform=False, triangulate=False)
+
+
+        verts_all = []
+        for ele in bm.verts:
+            # append elements to the list while converting their locations to ints
+            # this enables a sort on all elements
+            verts_all.append({ele.index, {(int)(ele.co[0]*(1/threshold)), (int)(ele.co[1]*(1/threshold)), (int)(ele.co[2]*(1/threshold))}})
+
+        # Sort the vertices by their x, y, z coordinates, deleting any which are further than threshold_double away from each other
+        verts_all.sort(key = self.sort_x)
+        previousOK = True
+        for v in range(len(verts_all)-1,0,-1):
+            if abs(verts_all[v][2][0] - verts_all[v-1][2][0]) < 1:
+                previousOK = False
+            else:
+                if previousOK:
+                    del verts_all[v+1]
+                previousOK = True
+
+        verts_all.sort(key = self.sort_y)
+        previousOK = True
+        for v in range(len(verts_all)-1,0,-1):
+            if abs(verts_all[v][2][1] - verts_all[v-1][2][1]) < 1:
+                previousOK = False
+            else:
+                if previousOK:
+                    del verts_all[v+1]
+                previousOK = True
+
+        verts_all.sort(key = self.sort_z)
+        previousOK = True
+        for v in range(len(verts_all)-1,0,-1):
+            if abs(verts_all[v][2][2] - verts_all[v-1][2][2]) < 1:
+                previousOK = False
+            else:
+                if previousOK:
+                    del verts_all[v+1]
+                previousOK = True
+
+        # now we should have eliminated all vertices further than threshold away from each other in a straight line
+        # so just calculate the 3d distance for any remaining verts, and delete any at appropriate spacing from the list
+        # NB there's probably a faster way to do this with blender matrices...
+        previousOK = True
+        for v in range(len(verts_all)-1,0,-1):
+            dx = verts_all[v][2][0] - verts_all[v+1][2][0]
+            dy = verts_all[v][2][1] - verts_all[v+1][2][1]
+            dz = verts_all[v][2][2] - verts_all[v+1][2][2]
+            if sqrt(dx*dx + dy*dy + dz*dz) < threshold:
+                previousOK = False
+            else:
+                if previousOK:
+                    del verts_all[v+1]
+                previousOK = True
+
+        # now add the current list of vertex indices to an array for the report
+        verts_zero = array.array('i', (i for i, loc in enumerate(verts_all)))
+
+        info.append((f"v Close Vertices: {len(verts_zero)}", (bmesh.types.BMFace, verts_zero), MESH_OT_print3d_clean_doubles))
+
+        bm.free()
+
+    def execute(self, context):
+        return execute_check(self, context)
+
 
 
 class MESH_OT_print3d_check_distorted(Operator):
@@ -278,7 +383,8 @@ class MESH_OT_print3d_check_disconnected(Operator):
     def execute(self, context):
         return execute_check(self, context)
 
-class print3d_check_resin_traps(Operator):
+
+class MESH_OT_print3d_check_unfilled_islands(Operator):
     bl_idname = "mesh.print3d_check_unfilled_islands"
     bl_label = "3D-Print Check for internal but incompletely cured spots"
     bl_description = "Check for internal but incompletely cured spots which will not be able to drain externally"
@@ -289,30 +395,13 @@ class print3d_check_resin_traps(Operator):
         self.report({'INFO'}, "SORRY NO SEARCH FOR RESIN ISLANDS CODED YET")
         # ideally use the meshlab filter "select small disconnected components" to save extra coding
 
-#        import array
-
-#        scene = bpy.context.scene
-#        print_3d = scene.print_3d
-#        angle_distort = print_3d.angle_distort
-
-#        bm = mesh_helpers.bmesh_copy_from_object(obj, transform=True, triangulate=False)
-#        bm.normal_update()
-
-#        faces_distort = array.array(
-#            'i',
-#            (i for i, ele in enumerate(bm.faces) if mesh_helpers.face_is_distorted(ele, angle_distort))
-#        )
-
-#        info.append((f"Non-Flat Faces: {len(faces_distort)}", (bmesh.types.BMFace, faces_distort), MESH_OT_print3d_clean_distorted))
-
-#        bm.free()
 
     def execute(self, context):
         return execute_check(self, context)
 
 
-class MESH_OT_print3d_clean_notdefined(Operator):
-    bl_idname = "mesh.print3d_clean_notdefined"
+class MESH_OT_print3d_class_notdefined(Operator):
+    bl_idname = "mesh.print3d_class_notdefined"
     bl_label = "3D-Print No Defined Cleaner"
     bl_description = "Placeholder when cleaner class not available"
     bl_options = {'REGISTER', 'UNDO'}
@@ -332,6 +421,7 @@ class MESH_OT_print3d_clean_notdefined(Operator):
         return {'FINISHED'}
 
 
+
 class MESH_OT_print3d_check_thick(Operator):
     bl_idname = "mesh.print3d_check_thick"
     bl_label = "3D-Print Check Thickness"
@@ -347,7 +437,7 @@ class MESH_OT_print3d_check_thick(Operator):
         print_3d = scene.print_3d
 
         faces_error = mesh_helpers.bmesh_check_thick_object(obj, print_3d.thickness_min)
-        info.append((f"Thin Faces: {len(faces_error)}", (bmesh.types.BMFace, faces_error), MESH_OT_print3d_clean_notdefined))
+        info.append((f"Thin Faces: {len(faces_error)}", (bmesh.types.BMFace, faces_error), MESH_OT_print3d_class_notdefined))
 
     def execute(self, context):
         return execute_check(self, context)
@@ -372,7 +462,7 @@ class MESH_OT_print3d_check_sharp(Operator):
             if ele.is_manifold and ele.calc_face_angle_signed() > angle_sharp
         ]
 
-        info.append((f"Sharp Edge: {len(edges_sharp)}", (bmesh.types.BMEdge, edges_sharp), MESH_OT_print3d_clean_notdefined))
+        info.append((f"Sharp Edge: {len(edges_sharp)}", (bmesh.types.BMEdge, edges_sharp), MESH_OT_print3d_class_notdefined))
         bm.free()
 
     def execute(self, context):
@@ -408,7 +498,7 @@ class MESH_OT_print3d_check_overhang(Operator):
             if z_down_angle(ele.normal, 4.0) < angle_overhang
         ]
 
-        info.append((f"Overhang Face: {len(faces_overhang)}", (bmesh.types.BMFace, faces_overhang), MESH_OT_print3d_clean_notdefined))
+        info.append((f"Overhang Face: {len(faces_overhang)}", (bmesh.types.BMFace, faces_overhang), MESH_OT_print3d_class_notdefined))
         bm.free()
 
     def execute(self, context):
@@ -424,6 +514,7 @@ class MESH_OT_print3d_check_all(Operator):
         MESH_OT_print3d_check_solid,
         MESH_OT_print3d_check_intersections,
         MESH_OT_print3d_check_degenerate,
+        MESH_OT_print3d_check_doubles,
         MESH_OT_print3d_check_distorted,
         MESH_OT_print3d_check_thick,
         MESH_OT_print3d_check_sharp,
@@ -445,32 +536,10 @@ class MESH_OT_print3d_check_all(Operator):
 
 
 
-
-class MESH_OT_print3d_clean_notdefined(Operator):
-    bl_idname = "mesh.print3d_clean_notdefined"
-    bl_label = "3D-Print No Defined Cleaner"
-    bl_description = "Placeholder when cleaner class not available"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        # TODO
-        # This needs to search for faces which have no backing (ie are a single face thick)
-        # also for any areas which are too thin for the resolution of the printer
-        #print("")
-        #bpy.context.window_manager.popup_menu("CLEAN THIN", title="Action", icon='ERROR')
-        self.report({'INFO'}, "SORRY NO AUTOMATIC CLEANER AVAILABLE")
-        #The color depends on the type enum: INFO gets green, WARNING light red, and ERROR dark red. I don't see reference to any direct output to Info window, other than this method.
-
-
-        #winsound.Beep(2500, 1000)
-
-        return {'FINISHED'}
-
-
 class MESH_OT_print3d_clean_distorted(Operator):
     bl_idname = "mesh.print3d_clean_distorted"
     bl_label = "3D-Print Clean Distorted"
-    bl_description = "Triangulate distorted faces"
+    bl_description = "Triangulate distorted faces (this decreases chances of a slicer error)"
     bl_options = {'REGISTER', 'UNDO'}
 
     angle: FloatProperty(
@@ -652,26 +721,6 @@ class MESH_OT_print3d_clean_non_manifold(Operator):
         bpy.ops.mesh.delete(type='VERT')
 
 
-class MESH_OT_print3d_clean_thin(Operator):
-    bl_idname = "mesh.print3d_clean_thin"
-    bl_label = "3D-Print Clean Thin"
-    bl_description = "Ensure minimum thickness"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        # TODO
-        # This needs to search for faces which have no backing (ie are a single face thick)
-        # also for any areas which are too thin for the resolution of the printer
-        #print("")
-        #bpy.context.window_manager.popup_menu("CLEAN THIN", title="Action", icon='ERROR')
-        self.report({'INFO'}, "CLEAN THIN")
-        #The color depends on the type enum: INFO gets green, WARNING light red, and ERROR dark red. I don't see reference to any direct output to Info window, other than this method.
-
-
-        #winsound.Beep(2500, 1000)
-
-        return {'FINISHED'}
-
 
 class MESH_OT_print3d_clean_degenerate(Operator):
     bl_idname = "mesh.print3d_clean_degenerate"
@@ -721,8 +770,8 @@ class MESH_OT_print3d_clean_degenerate(Operator):
 
 class MESH_OT_print3d_clean_doubles(Operator):
     bl_idname = "mesh.print3d_clean_doubles"
-    bl_label = "Remove Doubles"
-    bl_description = "Remove duplicate vertices"
+    bl_label = "Close Vertices"
+    bl_description = "Merge Vertices in very close proximity ('Doubles')"
     bl_options = {'REGISTER', 'UNDO'}
 
     threshold: FloatProperty(

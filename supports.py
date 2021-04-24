@@ -1,7 +1,7 @@
 import bpy
 import math
 import bmesh
-
+from bpy.types import Operator
 
 
 
@@ -1026,6 +1026,19 @@ def createSupports():
     #bpy.ops.object.mode_set(mode = initialMode)
 
 
-print("")
-print("*****************   STARTING NEW RUN    *********************")
-createSupports()
+#print("")
+#print("*****************   STARTING NEW RUN    *********************")
+#createSupports()
+
+class MESH_OT_print3d_create_supports(Operator):
+    bl_idname = "mesh.print3d_create_supports"
+    bl_label = "3D-Print Create Supports"
+    bl_description = "3D-Print Create Supports for Selected Faces"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        self.report({'INFO'}, "Creating Supports for selected faces")
+        createSupports()
+
+        return {'FINISHED'}
+

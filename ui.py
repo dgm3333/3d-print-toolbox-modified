@@ -32,8 +32,8 @@ from . import report
 
 
 '''
-def MessageBox(bpy.types.Operator):
-    bl_idname = "message.messagebox"
+def print3d_show_check_clean_help(bpy.types.Operator):
+    bl_idname = "message.print3d_show_check_clean_help"
     bl_label = ""
  
     message = bpy.props.StringProperty(
@@ -54,9 +54,6 @@ def MessageBox(bpy.types.Operator):
         self.layout.label(self.message)
         self.layout.label("")
 '''
-
-
-
 
 
 class View3DPrintPanel:
@@ -103,15 +100,10 @@ class VIEW3D_PT_print3d_analyze(View3DPrintPanel, Panel):
 
     def draw(self, context):
         layout = self.layout
+        scene = context.scene
+        unit = scene.unit_settings
+        print_3d = scene.print_3d
 
-        print_3d = context.scene.print_3d
-
-        layout.label(text="TODO:")
-        layout.label(text="Printer Presets - including creating printer workspace")
-        layout.label(text="Generate Printer Calibration Test Pieces")
-        # Calibration pieces are required to support slicing checks
-        layout.label(text="Include Meshlab Checks")
-        layout.label(text="Include Help")
         #row = col.row(align="Right")
         #row.operator("mesh.print3d_trigger_clean", text="", icon="QUESTION",).index = i
         # NB Icon Viewer is a plugin which adds an button to top of the python console showing the Blender Icons
@@ -127,8 +119,9 @@ class VIEW3D_PT_print3d_analyze(View3DPrintPanel, Panel):
         col = layout.column(align=True)
         row = col.row(align=True)
         row.label(text="Checks")
-#        row.operator("mesh.print3d_check_clean_help", text="", icon="QUESTION",)
-        row.operator("mesh.print3d_check_solid", text="", icon="QUESTION",)
+#        row.operator("message.print3d_show_check_clean_help", text="", icon="QUESTION",)   # placeholder 
+#        row.operator("ui.print3d_show_check_clean_help", text="", icon="QUESTION",)
+        
         row = col.row(align=True)
         layout.operator("mesh.print3d_check_all", text="Check All")
 
@@ -139,24 +132,40 @@ class VIEW3D_PT_print3d_analyze(View3DPrintPanel, Panel):
         row.operator("mesh.print3d_clean_non_manifold", text="", icon="SHADERFX",)
 #        layout.operator("mesh.print3d_clean_non_manifold", text="Make Manifold")
         row = col.row(align=True)
-        #TODO: add the stats here when button clicked rather than down in the report section
-        row.operator("mesh.print3d_info_volume", text="    Volume=TODO")
-        row.prop(print_3d, "area", text="")
+        row.label(text="")
+        row.operator("mesh.print3d_info_volume", text="Volume=")
+        row.label(text=str(float(int(print_3d.object_volume*1000)/1000)))
+        #row.prop(print_3d, "object_volume", text="")
+        if unit.system == 'IMPERIAL':
+            row.label(text='"³')
+        else:
+            row.label(text="cm³")
         row = col.row(align=True)
-        row.operator("mesh.print3d_info_area", text="    Area=TODO")
-        row.prop(print_3d, "area", text="")
-        
+        row.label(text="")
+        row.operator("mesh.print3d_info_area", text="Area=")
+        #to make non-editible:
+        row.label(text=str(print_3d.object_area))
+        #row.prop(print_3d, "object_area", text="")
+        if unit.system == 'IMPERIAL':
+            row.label(text='"²')
+        else:
+            row.label(text="cm²")
+            
         row = col.row(align=True)
         row.operator("mesh.print3d_check_intersect", text="Intersections")
+        row.operator("mesh.print3d_class_notdefined", text="", icon="UNLINKED",)
 
         row = col.row(align=True)
-        row.operator("mesh.print3d_check_degenerate", text="Min. Size")
+        row.operator("mesh.print3d_check_degenerate", text="v. Small Edge or Face")
         row.prop(print_3d, "threshold_zero", text="")
         row.operator("mesh.print3d_clean_degenerate", text="", icon="SHADERFX",)
 #        row.operator("mesh.print3d_clean_degenerate", text="Dissolve Smalls")
 
         row = col.row(align=True)
-        row.operator("mesh.print3d_clean_doubles", text="Remove Doubles")
+        row.operator("mesh.print3d_check_doubles", text="v. Close Vertices")
+        row.prop(print_3d, "threshold_double", text="")
+        row.operator("mesh.print3d_clean_doubles", text="", icon="SHADERFX",)
+#        row.operator("mesh.print3d_clean_doubles", text="Merge very close Doubles")
 
         row = col.row(align=True)
         row.operator("mesh.print3d_check_distort", text="Distorted")
@@ -167,12 +176,13 @@ class VIEW3D_PT_print3d_analyze(View3DPrintPanel, Panel):
         row = col.row(align=True)
         row.operator("mesh.print3d_check_thick", text="Thickness")
         row.prop(print_3d, "thickness_min", text="")
-        row.operator("mesh.print3d_clean_thin", text="", icon="SHADERFX",)
+        row.operator("mesh.print3d_class_notdefined", text="", icon="UNLINKED",)
 #        row.operator("mesh.print3d_clean_thin", text="Wall Thickness")
 
         row = col.row(align=True)
         row.operator("mesh.print3d_check_sharp", text="Edge Sharp")
         row.prop(print_3d, "angle_sharp", text="")
+        row.operator("mesh.print3d_class_notdefined", text="", icon="UNLINKED",)
 
 #        row = col.row(align=True)
 #        row.operator("mesh.print3d_check_disconnected", text="Disconnected")
@@ -181,27 +191,47 @@ class VIEW3D_PT_print3d_analyze(View3DPrintPanel, Panel):
         row = col.row(align=True)
         row.operator("mesh.print3d_check_overhang", text="Overhang")
         row.prop(print_3d, "angle_overhang", text="")
+        row.operator("mesh.print3d_class_notdefined", text="", icon="UNLINKED",)
 
         row = col.row(align=True)
-        row.operator("mesh.print3d_check_resin_traps", text="Resin Traps")
-        row.prop(print_3d, "volume_uncured", text="")
+#        row.label(text="Resin Traps:")
+#        row.operator("mesh.print3d_check_unfilled_islands", text="Resin Traps")
+        row.label(text="Resin Traps:"+str(float(int(print_3d.volume_uncured*1000)/1000)))
+        if unit.system == 'IMPERIAL':
+            row.label(text='"³')
+        else:
+            row.label(text="cm³")
+        row.operator("mesh.print3d_class_notdefined", text="", icon="UNLINKED",)
 
 #        row = col.row(align=True)
 #        layout.label(text="print3d_check_touching_boundaries")  # can't remember why I wanted to do this - probably just delete it
 
 
         row = col.row(align=True)
-        row.operator("mesh.print3d_clean_loose", text="Delete Loose")
+        row.label(text="Delete Loose:")
+        row.operator("mesh.print3d_clean_loose", text="", icon="SHADERFX",)
+
         row = col.row(align=True)
-        row.operator("mesh.print3d_clean_non_planars", text="Split Non Planar Faces")
+        row.label(text="Split Non Planar Faces:")
+        row.operator("mesh.print3d_clean_non_planars", text="", icon="SHADERFX",)
+
         row = col.row(align=True)
-        row.operator("mesh.print3d_clean_concaves", text="Split Concave Faces")
+        row.label(text="Split Concave Faces:")
+        row.operator("mesh.print3d_clean_concaves", text="", icon="SHADERFX",)
+
         row = col.row(align=True)
-        row.operator("mesh.print3d_clean_triangulates", text="Triangulate Faces")
+        row.label(text="Triangulate Faces:")
+        row.operator("mesh.print3d_clean_triangulates", text="", icon="SHADERFX",)
+
         row = col.row(align=True)
-        row.operator("mesh.print3d_clean_holes", text="Fill Holes")
+        row.label(text="Fill Holes:")
+        row.operator("mesh.print3d_clean_holes", text="", icon="SHADERFX",)
+
         row = col.row(align=True)
-        row.operator("mesh.print3d_clean_limited", text="Simplify Mesh (=Limited Dissolve)")
+        row.label(text="Highlight Printing Risk:")
+        row.operator("mesh.print3d_class_notdefined", text="", icon="UNLINKED",)
+
+
 
 
         self.draw_report(context)
@@ -212,10 +242,60 @@ class VIEW3D_PT_print3d_meshlab(View3DPrintPanel, Panel):
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
-        layout = self.layout
-        layout.label(text="TODO: link to pymeshlab")
-
         print_3d = context.scene.print_3d
+
+        layout = self.layout
+
+        col = layout.column(align=True)
+        row = col.row(align=True)
+
+        if not print_3d.pymeshlabAvailable:
+            row.label(text="You Need To Install Meshlab: ")
+    #        row.operator("message.print3d_show_meshlab_install_help", text="", icon="QUESTION",)
+            row.operator("mesh.print3d_class_notdefined", text="", icon="UNLINKED",)
+
+            #To use meshlab filters on Blender meshes
+            #Details are at:
+            #https://pypi.org/project/pymeshlab/
+
+            # You first need to install pymeshlab
+            #You can do this from the Blender scripting workspace in Blender 2.92
+            # BUT you have to have admininistor priviledges so for Windows users
+            #JUST THIS ONCE open Blender by R-clicking on it in the start menu and select"Run as Administrator"
+
+            #Open up the System Console (under the Window menu)
+            #Then paste the following into the scripting workspace and run it
+
+            #--- FROM HERE ---#
+            '''
+            import subprocess
+            import sys
+            import os
+ 
+            # path to python.exe
+            python_exe = os.path.join(sys.prefix, 'bin', 'python.exe')
+ 
+            # upgrade pip
+            subprocess.call([python_exe, "-m", "ensurepip"])
+            subprocess.call([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
+ 
+            # install required packages
+            subprocess.call([python_exe, "-m", "pip", "install", "pymeshlab"])
+
+            print("DONE")
+            '''
+            #--- TO HERE ---#
+
+
+            #Now exit Blender and restart it normally
+
+
+
+        else:
+
+            row = col.row(align=True)
+            row.operator("mesh.print3d_clean_triangulates", text="Triangulate Faces")
+
 
 
 
@@ -225,17 +305,45 @@ class VIEW3D_PT_print3d_transform(View3DPrintPanel, Panel):
 
     def draw(self, context):
         layout = self.layout
+        col = layout.column(align=True)
 
-        layout.label(text="print3d_slice")
-        layout.label(text="print3d_add_supports")
+        row = col.row(align=True)
+        row.label(text="Align With Baseplate:")
+        row.operator("mesh.print3d_class_notdefined", text="", icon="UNLINKED",)
 
-        layout.label(text="Scale To:-")
-        row = layout.row(align=True)
-        row.operator("mesh.print3d_scale_to_volume", text="Volume")
-        row.operator("mesh.print3d_scale_to_bounds", text="Bounds")
+        row = col.row(align=True)
+        row.label(text="Simplify Mesh (=Limited Dissolve):")
+        row.operator("mesh.print3d_clean_limited", text="", icon="SHADERFX",)
 
-        row = layout.row(align=True)
-        layout.label(text="TODO: print3d_merge_selected_into_single_solid")
+        row = col.row(align=True)
+        row.label(text="print3d_merge_selected_into_single_solid:")
+        row.operator("mesh.print3d_class_notdefined", text="", icon="UNLINKED",)
+#        row.operator("mesh.print3d_merge_selected_into_single_solid", text="", icon="SHADERFX",)
+
+        row = col.row(align=True)
+        row.label(text="Hollow Out Object:")
+        row.operator("mesh.print3d_class_notdefined", text="", icon="UNLINKED",)
+
+        row = col.row(align=True)
+        row.label(text="Scale to Volume:")
+        row.operator("mesh.print3d_scale_to_volume", text="", icon="SHADERFX",)
+        row = col.row(align=True)
+        row.label(text="Scale to Bounds:")
+        row.operator("mesh.print3d_scale_to_bounds", text="", icon="SHADERFX",)
+
+        
+        row = col.row(align=True)
+        row.label(text="Auto Support Selected Faces:")
+        row.operator("mesh.print3d_create_supports", text="", icon="SHADERFX",)
+
+        row = col.row(align=True)
+        row.label(text="Slice Object:")
+        row.operator("mesh.print3d_slicer", text="", icon="SHADERFX",)
+
+
+
+
+
 
 #        row.operator("mesh.print3d_merge_selected_into_single_solid", text="Merge To Solid")
 
@@ -261,12 +369,11 @@ class VIEW3D_PT_print3d_export(View3DPrintPanel, Panel):
         layout.prop(print_3d, "export_format")
         layout.operator("mesh.print3d_export", text="Export", icon='EXPORT')
 
-        layout.label(text="TODO: export direct to SLA voxel format")
+        layout.label(text="TODO: export direct to SLA voxel format - possibly use UVTools.core.dll")
 
 
-#DGM TODO: Merge this in
 class VIEW3D_PT_print3d_workarea(View3DPrintPanel, Panel):
-    bl_label = "Generate Workarea"
+    bl_label = "Settings"
     bl_options = {"DEFAULT_CLOSED"}
 
     def draw(self, context):
@@ -279,6 +386,11 @@ class VIEW3D_PT_print3d_workarea(View3DPrintPanel, Panel):
         layout.label(text="print3d_setup_printer_bed")
         layout.label(text="print3d_setup_printer_volume")
         layout.label(text="print3d_setup_printer_resolution")
+
+        layout.label(text="Printer Presets - including creating printer workspace")
+        layout.label(text="Generate Printer Calibration Test Pieces")
+        # Calibration pieces are required to support slicing checks
+
 
 
 #        layout.operator("mesh.print3d_setup_illuminate", text="Illuminate Visible")

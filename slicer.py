@@ -1,5 +1,6 @@
 import bpy, bmesh
 from bpy import context as C
+from bpy.types import Operator
 from mathutils import Vector
 
 # This code will slice the selected object into a set of vertices and edges
@@ -407,3 +408,19 @@ def slicer(step_size = 0.01, normalOfSlice = (0,0,1)):
 
 #slicer(step_size = 0.01, normalOfSlice = (0,0,1))
 #slicer(0.01, (0,0,1))
+
+
+class MESH_OT_print3d_slicer(Operator):
+    bl_idname = "mesh.print3d_slicer"
+    bl_label = "3D-Print Slice Object"
+    bl_description = "Slice Object in z-layers"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        self.report({'INFO'}, "Slicing selected object")
+        slicer(step_size = 0.01, normalOfSlice = (0,0,1))
+        #slicer(0.01, (0,0,1))
+
+        return {'FINISHED'}
+
+
