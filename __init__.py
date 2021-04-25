@@ -26,6 +26,15 @@
 
 
 
+#Misc addon dev Notes:
+# when editing an addon you can more quickly have it updated by Blender using the following
+# you can symlink the installed Blender directory to target your editing directory.
+# Then whenever you save the __init__.py file, Blender will know it needs to be reloaded 
+#   when you untick/retick to activate addon (in the Blender Preferences/Addons/section). See:
+#https://www.matthewsessions.com/blog/developing-blender-addon-tips/
+#in windows from an admin level command prompt (not a powershell)
+#mklink /J "C:\Users\dgm55\AppData\Roaming\Blender Foundation\Blender\2.92\scripts\addons\3d-print-toolbox-test" "C:\Users\dgm55\source\repos\StressTestAndSupportsVisualisation\3d-print-toolbox-test"
+# BUT don't forget to keep incremental backups...
 
 bl_info = {
     "name": "3D Print Toolbox",
@@ -47,6 +56,7 @@ if "bpy" in locals():
     importlib.reload(operators)
     importlib.reload(mesh_helpers)
     importlib.reload(meshlab_integration)
+    importlib.reload(meshlab_filter_panel)
     importlib.reload(slicer)
     importlib.reload(supports)
     if "export" in locals():
@@ -58,6 +68,7 @@ else:
     from bpy.types import PropertyGroup
     from bpy.props import (
         StringProperty,
+        IntProperty,
         BoolProperty,
         FloatProperty,
         EnumProperty,
@@ -69,12 +80,14 @@ else:
         operators,
         mesh_helpers,
         meshlab_integration,
+        meshlab_filter_panel,
         slicer,
         supports,
     )
 
 
 # subtype dependent on type. See: https://docs.blender.org/api/2.92/bpy.props.html#module-bpy.props
+# if adding new property types (eg BoolProperty) they have to be imported from bpy.props (above)
 class SceneProperties(PropertyGroup):
     export_format: EnumProperty(
         name="Format",
@@ -186,12 +199,20 @@ class SceneProperties(PropertyGroup):
         min=0.0,
         max=99999.0,
     )
-    pymeshlabAvailable: BoolProperty(
+    pymeshlabAvailable: IntProperty(
         name="Has pymeshlab been installed",
-        description="Flag to enable MeshLab functions",
-        default=False,
+        description="0 if untested, -1 if unavailable, 1 if pymeshlab has been imported",
+        default=0,
     )
-
+    pymeshlabfilters: EnumProperty(
+        name="MeshLab Filters",
+        default="select_none",
+        description="List of all MeshLab Filters accessible via pymeshlab",
+        items=(
+            ("select_none","select_none","select_none"),
+            ("-","--------","Favorites are listed above"),       
+        ),
+    )
 
 
 
@@ -231,6 +252,7 @@ classes = (
     operators.MESH_OT_print3d_check_disconnected,
 #    operators.MESH_OT_print3d_check_unfilled_islands,
     operators.MESH_OT_print3d_check_distorted,
+#    operators.MESH_OT_print3d_check_triangulates,    # not required check_distorted does the job fine
     operators.MESH_OT_print3d_check_solid,
     operators.MESH_OT_print3d_check_intersections,
     operators.MESH_OT_print3d_check_thick,
@@ -241,6 +263,7 @@ classes = (
     operators.MESH_OT_print3d_class_notdefined,
 
     operators.MESH_OT_print3d_clean_distorted,
+    operators.MESH_OT_print3d_clean_triangulates,   # basically a duplicated of clean_distorted
     operators.MESH_OT_print3d_clean_non_manifold,
 
     operators.MESH_OT_print3d_clean_degenerate,
@@ -249,7 +272,6 @@ classes = (
     operators.MESH_OT_print3d_clean_loose,
     operators.MESH_OT_print3d_clean_non_planars,
     operators.MESH_OT_print3d_clean_concaves,
-    operators.MESH_OT_print3d_clean_triangulates,
     operators.MESH_OT_print3d_clean_holes,
     operators.MESH_OT_print3d_clean_limited,
 
@@ -260,8 +282,19 @@ classes = (
     operators.MESH_OT_print3d_scale_to_bounds,
 
     operators.MESH_OT_print3d_export,
+    
+#    meshlab_integration.VIEW3D_OT_print3d_install_pymeshlab,
+#    meshlab_integration.MESH_OT_print3d_process_mesh_in_meshlab,
 
-    meshlab_integration.MESH_OT_print3d_process_mesh_in_meshlab,
+#    meshlab_filter_panel.VIEW3D_OT_print3d_actions,
+#    meshlab_filter_panel.VIEW3D_OT_print3d_printItems,
+#    meshlab_filter_panel.VIEW3D_OT_print3d_clearList,
+#    meshlab_filter_panel.VIEW3D_OT_print3d_removeDuplicates,
+#    meshlab_filter_panel.VIEW3D_OT_print3d_selectItems,
+#    meshlab_filter_panel.VIEW3D_UL_print3d_items,
+#    meshlab_filter_panel.VIEW3D_PT_print3d_objectList,
+#    meshlab_filter_panel.VIEW3D_print3d_objectCollection,
+
 
     slicer.MESH_OT_print3d_slicer,
 
@@ -277,6 +310,7 @@ def register():
         bpy.utils.register_class(cls)
 
     bpy.types.Scene.print_3d = PointerProperty(type=SceneProperties)
+
 
 
 def unregister():

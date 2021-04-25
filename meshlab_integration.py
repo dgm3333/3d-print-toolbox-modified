@@ -3,9 +3,11 @@ import bpy
 from bpy.types import Operator
 print3d_pymeshlabAvailable = False
 try:
+    #This isn't in the default Blender install so may not be available...
     import pymeshlab
-    print3d_pymeshlabAvailable = True
+    print("*** NB: The warning about filter_sketchfab.dll does not seem to affect meshlab function ***")
 except ModuleNotFoundError:
+    print("pymeshlab module not found - Needs to be installed to make use of meshlab filters")
     pass
 import numpy
 
@@ -80,274 +82,279 @@ pymeshlab.print_filter_parameter_list('discrete_curvatures')
 
 
 
-#AVAILABLE FILTERS ARE
+# for custom Listboxes see:
+#https://blender.stackexchange.com/questions/30444/create-an-interface-which-is-similar-to-the-material-list-box
+#https://gist.github.com/tin2tin/ce4696795ad918448dfbad56668ed4d5
 
-print3d_meshlab_filters = [
-    "alpha_complex_shape",
-    "ambient_occlusion",
-    "annulus",
-    "box_cube",
-    "build_a_polyline_from_selected_edges",
-    "change_the_current_layer",
-    "change_visibility_of_layers",
-    "clamp_vertex_quality",
-    "close_holes",
-    "clustered_vertex_sampling",
-    "color_noise",
-    "colorize_by_border_distance",
-    "colorize_by_face_quality",
-    "colorize_by_geodesic_distance_from_a_given_point",
-    "colorize_by_geodesic_distance_from_the_selected_points",
-    "colorize_by_vertex_quality",
-    "colorize_curvature_apss",
-    "colorize_curvature_rimls",
-    "compact_faces",
-    "compact_vertices",
-    "compute_area_perimeter_of_selection",
-    "compute_curvature_principal_directions",
-    "compute_geometric_measures",
-    "compute_normals_for_point_sets",
-    "compute_planar_section",
-    "compute_topological_measures",
-    "compute_topological_measures_for_quad_meshes",
-    "conditional_face_selection",
-    "conditional_vertex_selection",
-    "cone",
-    "convert_pervertex_uv_into_perwedge_uv",
-    "convert_perwedge_uv_into_pervertex_uv",
-    "convex_hull",
-    "craters_generation",
-    "create_selection_perimeter_polyline",
-    "create_solid_wireframe",
-    "cross_field_creation",
-    "csg_operation",
-    "curvature_flipping_optimization",
-    "cut_mesh_along_crease_edges",
-    "define_new_per_face_attribute",
-    "define_new_per_vertex_attribute",
-    "delaunay_triangulation",
-    "delete_all_faces",
-    "delete_all_non_selected_rasters",
-    "delete_all_non_visible_mesh_layers",
-    "delete_current_mesh",
-    "delete_current_raster",
-    "delete_selected_faces",
-    "delete_selected_faces_and_vertices",
-    "delete_selected_vertices",
-    "depth_complexity",
-    "depth_smooth",
-    "dilate_selection",
-    "directional_geom_preserv",
-    "discrete_curvatures",
-    "disk_vertex_coloring",
-    "distance_from_reference_mesh",
-    "dodecahedron",
-    "duplicate_current_layer",
-    "dust_accumulation",
-    "equalize_vertex_color",
-    "erode_selection",
-    "estimate_radius_from_density",
-    "export_active_rasters_cameras_to_file",
-    "fit_a_plane_to_selection",
-    "flatten_visible_layers",
-    "fractal_displacement",
-    "fractal_terrain",
-    "generate_scalar_harmonic_field",
-    "geometric_cylindrical_unwrapping",
-    "gpu_filter_example_",
-    "grid_generator",
-    "hausdorff_distance",
-    "hc_laplacian_smooth",
-    "icosahedron",
-    "image_alignment_mutual_information",
-    "image_registration_global_refinement_using_mutual_information",
-    "implicit_surface",
-    "import_cameras_for_active_rasters_from_file",
-    "invert_faces_orientation",
-    "invert_selection",
-    "iso_parametrization_build_atlased_mesh",
-    "iso_parametrization_main",
-    "iso_parametrization_remeshing",
-    "iso_parametrization_transfer_between_meshes",
-    "laplacian_smooth",
-    "laplacian_smooth_surface_preserving",
-    "marching_cubes_apss",
-    "marching_cubes_rimls",
-    "matrix_freeze_current_matrix",
-    "matrix_invert_current_matrix",
-    "matrix_reset_current_matrix",
-    "matrix_set_copy_transformation",
-    "matrix_set_from_translation_rotation_scale",
-    "merge_close_vertices",
-    "merge_wedge_texture_coord",
-    "mesh_element_sampling",
-    "mls_projection_apss",
-    "mls_projection_rimls",
-    "montecarlo_sampling",
-    "move_selected_faces_to_another_layer",
-    "move_selected_vertices_to_another_layer",
-    "noisy_isosurface",
-    "normalize_face_normals",
-    "normalize_vertex_normals",
-    "octahedron",
-    "parameterization__texturing_from_registered_rasters",
-    "parameterization_from_registered_rasters",
-    "parametrization_flat_plane",
-    "parametrization_trivial_per_triangle",
-    "parametrization_voronoi_atlas",
-    "per_face_color_function",
-    "per_face_quality_according_to_triangle_shape_and_aspect_ratio",
-    "per_face_quality_function",
-    "per_face_quality_histogram",
-    "per_face_quality_stat",
-    "per_vertex_color_function",
-    "per_vertex_geometric_function",
-    "per_vertex_normal_function",
-    "per_vertex_quality_function",
-    "per_vertex_quality_histogram",
-    "per_vertex_quality_stat",
-    "per_vertex_texture_function",
-    "per_wedge_texture_function",
-    "perlin_color",
-    "permesh_color_scattering",
-    "planar_flipping_optimization",
-    "point_cloud_simplification",
-    "points_cloud_movement",
-    "points_on_a_sphere",
-    "poisson_disk_sampling",
-    "project_active_rasters_color_to_current_mesh",
-    "project_active_rasters_color_to_current_mesh_filling_the_texture",
-    "project_current_raster_color_to_current_mesh",
-    "quality_from_raster_coverage_face",
-    "quality_from_raster_coverage_vertex",
-    "quality_mapper_applier",
-    "random_component_color",
-    "random_face_color",
-    "random_vertex_displacement",
-    "re_compute_face_normals",
-    "re_compute_per_polygon_face_normals",
-    "re_compute_vertex_normals",
-    "re_orient_all_faces_coherentely",
-    "re_orient_vertex_normals_using_cameras",
-    "refine_user_defined",
-    "regular_recursive_sampling",
-    "remeshing_isotropic_explicit_remeshing",
-    "remove_duplicate_faces",
-    "remove_duplicate_vertices",
-    "remove_isolated_folded_faces_by_edge_flip",
-    "remove_isolated_pieces_wrt_diameter",
-    "remove_isolated_pieces_wrt_face_num",
-    "remove_t_vertices_by_edge_collapse",
-    "remove_t_vertices_by_edge_flip",
-    "remove_unreferenced_vertices",
-    "remove_vertices_wrt_quality",
-    "remove_zero_area_faces",
-    "rename_current_mesh",
-    "rename_current_raster",
-    "repair_non_manifold_edges_by_removing_faces",
-    "repair_non_manifold_edges_by_splitting_vertices",
-    "repair_non_manifold_vertices_by_splitting",
-    "saturate_vertex_quality",
-    "scaledependent_laplacian_smooth",
-    "select_all",
-    "select_border",
-    "select_by_face_quality",
-    "select_by_vertex_quality",
-    "select_connected_faces",
-    "select_crease_edges",
-    "select_faces_by_color",
-    "select_faces_by_view_angle",
-    "select_faces_from_vertices",
-    "select_faces_with_edges_longer_than",
-    "select_folded_faces",
-    "select_non_manifold_edges_",
-    "select_non_manifold_vertices",
-    "select_none",
-    "select_outliers",
-    "select_problematic_faces",
-    "select_self_intersecting_faces",
-    "select_small_disconnected_component",
-    "select_vertex_texture_seams",
-    "select_vertices_from_faces",
-    "select_visible_points",
-    "set_mesh_camera",
-    "set_raster_camera",
-    "set_texture",
-    "shape_diameter_function",
-    "simplification_clustering_decimation",
-    "simplification_edge_collapse_for_marching_cube_meshes",
-    "simplification_quadric_edge_collapse_decimation",
-    "simplification_quadric_edge_collapse_decimation_with_texture",
-    "smooth_face_normals",
-    "smooth_laplacian_face_color",
-    "smooth_laplacian_vertex_color",
-    "smooth_vertex_quality",
-    "smooths_normals_on_a_point_sets",
-    "snap_mismatched_borders",
-    "sphere",
-    "sphere_cap",
-    "split_in_connected_components",
-    "stratified_triangle_sampling",
-    "structure_synth_mesh_creation",
-    "subdivision_surfaces_butterfly_subdivision",
-    "subdivision_surfaces_catmull_clark",
-    "subdivision_surfaces_loop",
-    "subdivision_surfaces_ls3_loop",
-    "subdivision_surfaces_midpoint",
-    "surface_reconstruction_ball_pivoting",
-    "surface_reconstruction_screened_poisson",
-    "surface_reconstruction_vcg",
-    "taubin_smooth",
-    "tetrahedron",
-    "texel_sampling",
-    "torus",
-    "transfer_color_face_to_vertex",
-    "transfer_color_mesh_to_face",
-    "transfer_color_texture_to_vertex",
-    "transfer_color_vertex_to_face",
-    "transfer_texture_to_vertex_color_1_or_2_meshes",
-    "transfer_vertex_attributes_to_texture_1_or_2_meshes",
-    "transfer_vertex_color_to_texture",
-    "transform_align_to_principal_axis",
-    "transform_flip_and_or_swap_axis",
-    "transform_rotate",
-    "transform_rotate_camera_or_set_of_cameras",
-    "transform_rotate_to_fit_to_a_plane",
-    "transform_scale_camera_or_set_of_cameras",
-    "transform_scale_normalize",
-    "transform_the_camera_extrinsics_or_all_the_cameras_of_the_project",
-    "transform_translate_camera_or_set_of_cameras",
-    "transform_translate_center_set_origin",
-    "tri_to_quad_by_4_8_subdivision",
-    "tri_to_quad_by_smart_triangle_pairing",
-    "turn_into_a_pure_triangular_mesh",
-    "turn_into_quad_dominant_mesh",
-    "twostep_smooth",
-    "uniform_mesh_resampling",
-    "unsharp_mask_color",
-    "unsharp_mask_geometry",
-    "unsharp_mask_normals",
-    "unsharp_mask_quality",
-    "vertex_attribute_seam",
-    "vertex_attribute_transfer",
-    "vertex_color_brightness_contrast_gamma",
-    "vertex_color_colourisation",
-    "vertex_color_desaturation",
-    "vertex_color_filling",
-    "vertex_color_invert",
-    "vertex_color_levels_adjustment",
-    "vertex_color_noise",
-    "vertex_color_thresholding",
-    "vertex_color_white_balance",
-    "vertex_linear_morphing",
-    "vertex_quality_from_camera",
-    "volumetric_obscurance",
-    "volumetric_sampling",
-    "voronoi_filtering",
-    "voronoi_sampling",
-    "voronoi_scaffolding",
-    "voronoi_vertex_coloring",
-]
+'''
+#AVAILABLE FILTERS ARE
+alpha_complex_shape
+ambient_occlusion
+annulus
+box_cube
+build_a_polyline_from_selected_edges
+change_the_current_layer
+change_visibility_of_layers
+clamp_vertex_quality
+close_holes
+clustered_vertex_sampling
+color_noise
+colorize_by_border_distance
+colorize_by_face_quality
+colorize_by_geodesic_distance_from_a_given_point
+colorize_by_geodesic_distance_from_the_selected_points
+colorize_by_vertex_quality
+colorize_curvature_apss
+colorize_curvature_rimls
+compact_faces
+compact_vertices
+compute_area_perimeter_of_selection
+compute_curvature_principal_directions
+compute_geometric_measures
+compute_normals_for_point_sets
+compute_planar_section
+compute_topological_measures
+compute_topological_measures_for_quad_meshes
+conditional_face_selection
+conditional_vertex_selection
+cone
+convert_pervertex_uv_into_perwedge_uv
+convert_perwedge_uv_into_pervertex_uv
+convex_hull
+craters_generation
+create_selection_perimeter_polyline
+create_solid_wireframe
+cross_field_creation
+csg_operation
+curvature_flipping_optimization
+cut_mesh_along_crease_edges
+define_new_per_face_attribute
+define_new_per_vertex_attribute
+delaunay_triangulation
+delete_all_faces
+delete_all_non_selected_rasters
+delete_all_non_visible_mesh_layers
+delete_current_mesh
+delete_current_raster
+delete_selected_faces
+delete_selected_faces_and_vertices
+delete_selected_vertices
+depth_complexity
+depth_smooth
+dilate_selection
+directional_geom_preserv
+discrete_curvatures
+disk_vertex_coloring
+distance_from_reference_mesh
+dodecahedron
+duplicate_current_layer
+dust_accumulation
+equalize_vertex_color
+erode_selection
+estimate_radius_from_density
+export_active_rasters_cameras_to_file
+fit_a_plane_to_selection
+flatten_visible_layers
+fractal_displacement
+fractal_terrain
+generate_scalar_harmonic_field
+geometric_cylindrical_unwrapping
+gpu_filter_example_
+grid_generator
+hausdorff_distance
+hc_laplacian_smooth
+icosahedron
+image_alignment_mutual_information
+image_registration_global_refinement_using_mutual_information
+implicit_surface
+import_cameras_for_active_rasters_from_file
+invert_faces_orientation
+invert_selection
+iso_parametrization_build_atlased_mesh
+iso_parametrization_main
+iso_parametrization_remeshing
+iso_parametrization_transfer_between_meshes
+laplacian_smooth
+laplacian_smooth_surface_preserving
+marching_cubes_apss
+marching_cubes_rimls
+matrix_freeze_current_matrix
+matrix_invert_current_matrix
+matrix_reset_current_matrix
+matrix_set_copy_transformation
+matrix_set_from_translation_rotation_scale
+merge_close_vertices
+merge_wedge_texture_coord
+mesh_element_sampling
+mls_projection_apss
+mls_projection_rimls
+montecarlo_sampling
+move_selected_faces_to_another_layer
+move_selected_vertices_to_another_layer
+noisy_isosurface
+normalize_face_normals
+normalize_vertex_normals
+octahedron
+parameterization__texturing_from_registered_rasters
+parameterization_from_registered_rasters
+parametrization_flat_plane
+parametrization_trivial_per_triangle
+parametrization_voronoi_atlas
+per_face_color_function
+per_face_quality_according_to_triangle_shape_and_aspect_ratio
+per_face_quality_function
+per_face_quality_histogram
+per_face_quality_stat
+per_vertex_color_function
+per_vertex_geometric_function
+per_vertex_normal_function
+per_vertex_quality_function
+per_vertex_quality_histogram
+per_vertex_quality_stat
+per_vertex_texture_function
+per_wedge_texture_function
+perlin_color
+permesh_color_scattering
+planar_flipping_optimization
+point_cloud_simplification
+points_cloud_movement
+points_on_a_sphere
+poisson_disk_sampling
+project_active_rasters_color_to_current_mesh
+project_active_rasters_color_to_current_mesh_filling_the_texture
+project_current_raster_color_to_current_mesh
+quality_from_raster_coverage_face
+quality_from_raster_coverage_vertex
+quality_mapper_applier
+random_component_color
+random_face_color
+random_vertex_displacement
+re_compute_face_normals
+re_compute_per_polygon_face_normals
+re_compute_vertex_normals
+re_orient_all_faces_coherentely
+re_orient_vertex_normals_using_cameras
+refine_user_defined
+regular_recursive_sampling
+remeshing_isotropic_explicit_remeshing
+remove_duplicate_faces
+remove_duplicate_vertices
+remove_isolated_folded_faces_by_edge_flip
+remove_isolated_pieces_wrt_diameter
+remove_isolated_pieces_wrt_face_num
+remove_t_vertices_by_edge_collapse
+remove_t_vertices_by_edge_flip
+remove_unreferenced_vertices
+remove_vertices_wrt_quality
+remove_zero_area_faces
+rename_current_mesh
+rename_current_raster
+repair_non_manifold_edges_by_removing_faces
+repair_non_manifold_edges_by_splitting_vertices
+repair_non_manifold_vertices_by_splitting
+saturate_vertex_quality
+scaledependent_laplacian_smooth
+select_all
+select_border
+select_by_face_quality
+select_by_vertex_quality
+select_connected_faces
+select_crease_edges
+select_faces_by_color
+select_faces_by_view_angle
+select_faces_from_vertices
+select_faces_with_edges_longer_than
+select_folded_faces
+select_non_manifold_edges_
+select_non_manifold_vertices
+select_none
+select_outliers
+select_problematic_faces
+select_self_intersecting_faces
+select_small_disconnected_component
+select_vertex_texture_seams
+select_vertices_from_faces
+select_visible_points
+set_mesh_camera
+set_raster_camera
+set_texture
+shape_diameter_function
+simplification_clustering_decimation
+simplification_edge_collapse_for_marching_cube_meshes
+simplification_quadric_edge_collapse_decimation
+simplification_quadric_edge_collapse_decimation_with_texture
+smooth_face_normals
+smooth_laplacian_face_color
+smooth_laplacian_vertex_color
+smooth_vertex_quality
+smooths_normals_on_a_point_sets
+snap_mismatched_borders
+sphere
+sphere_cap
+split_in_connected_components
+stratified_triangle_sampling
+structure_synth_mesh_creation
+subdivision_surfaces_butterfly_subdivision
+subdivision_surfaces_catmull_clark
+subdivision_surfaces_loop
+subdivision_surfaces_ls3_loop
+subdivision_surfaces_midpoint
+surface_reconstruction_ball_pivoting
+surface_reconstruction_screened_poisson
+surface_reconstruction_vcg
+taubin_smooth
+tetrahedron
+texel_sampling
+torus
+transfer_color_face_to_vertex
+transfer_color_mesh_to_face
+transfer_color_texture_to_vertex
+transfer_color_vertex_to_face
+transfer_texture_to_vertex_color_1_or_2_meshes
+transfer_vertex_attributes_to_texture_1_or_2_meshes
+transfer_vertex_color_to_texture
+transform_align_to_principal_axis
+transform_flip_and_or_swap_axis
+transform_rotate
+transform_rotate_camera_or_set_of_cameras
+transform_rotate_to_fit_to_a_plane
+transform_scale_camera_or_set_of_cameras
+transform_scale_normalize
+transform_the_camera_extrinsics_or_all_the_cameras_of_the_project
+transform_translate_camera_or_set_of_cameras
+transform_translate_center_set_origin
+tri_to_quad_by_4_8_subdivision
+tri_to_quad_by_smart_triangle_pairing
+turn_into_a_pure_triangular_mesh
+turn_into_quad_dominant_mesh
+twostep_smooth
+uniform_mesh_resampling
+unsharp_mask_color
+unsharp_mask_geometry
+unsharp_mask_normals
+unsharp_mask_quality
+vertex_attribute_seam
+vertex_attribute_transfer
+vertex_color_brightness_contrast_gamma
+vertex_color_colourisation
+vertex_color_desaturation
+vertex_color_filling
+vertex_color_invert
+vertex_color_levels_adjustment
+vertex_color_noise
+vertex_color_thresholding
+vertex_color_white_balance
+vertex_linear_morphing
+vertex_quality_from_camera
+volumetric_obscurance
+volumetric_sampling
+voronoi_filtering
+voronoi_sampling
+voronoi_scaffolding
+voronoi_vertex_coloring
+
+'''
+
 
 
 
@@ -493,6 +500,30 @@ def simpleExportExample():
 
     print("DONE")
 
+
+class VIEW3D_OT_print3d_install_pymeshlab(Operator):
+    """Install pymeshlab module into Blender Python"""
+    bl_idname = 'VIEW3D.print3d_install_pymeshlab'
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_label = "pymeshlab Install"
+
+    def execute(self, context):
+        import subprocess
+        import sys
+        import os
+ 
+        # path to python.exe
+        python_exe = os.path.join(sys.prefix, 'bin', 'python.exe')
+ 
+        # upgrade pip
+        subprocess.call([python_exe, "-m", "ensurepip"])
+        subprocess.call([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
+ 
+        # install required packages
+        subprocess.call([python_exe, "-m", "pip", "install", "pymeshlab"])
+
+        print("DONE: pymeshlab installation")
 
 
 class MESH_OT_print3d_process_mesh_in_meshlab(Operator):

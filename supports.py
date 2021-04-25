@@ -2,6 +2,7 @@ import bpy
 import math
 import bmesh
 from bpy.types import Operator
+from mathutils import Vector, Matrix
 
 
 
@@ -89,7 +90,7 @@ class Point(object):
         '''
         Point iteration:
             for a in pt:
-                print a,
+                #print a,
         Prints:
             pt.x pt.y pt.z
         '''
@@ -105,10 +106,12 @@ class Point(object):
             object.__setattr__(self, 'data', (float(self.x), float(self.y), float(self.z)))
         except KeyError:
             #raise IndexError, "Index argument out of range in '%s' __setitem__" % (type(self).__name__)
-            print('raise IndexError, "Index argument out of range in %s __setitem__" % (type(self).__name__)')
+            #print('raise IndexError, "Index argument out of range in %s __setitem__" % (type(self).__name__)')
+            pass
         except ValueError:
             #raise ValueError, "Invalid literal in '%s' __setitem__" % (type(self).__name__)    
-            print('raise ValueError, "Invalid literal in %s __setitem__" % (type(self).__name__)')
+            #print('raise ValueError, "Invalid literal in %s __setitem__" % (type(self).__name__)')
+            pass
 
 # TODO: switch to 'keyname' in dictionary
 #    def __setattr__(self, name, value):
@@ -119,7 +122,7 @@ class Point(object):
 #            object.__setattr__(self, 'data', (float(self.x), float(self.y), float(self.z)))
 #        else:
             #raise AttributeError, "'%s' object has no attribute '%s'" % (type(self).__name__, name)
-#            print('raise AttributeError, "%s object has no attribute %s" % (type(self).__name__, name)')
+#            #print('raise AttributeError, "%s object has no attribute %s" % (type(self).__name__, name)')
  
     def __cmp__(self, other, epsilon=0.000001):
         x = abs(self.x-other.x)
@@ -338,7 +341,7 @@ class LineLineIntersect3D:
                     self.position = "Not Beyond RE" # apparent intersection is closer to p2
                 else:
                     #Warning('self.position calculation error, self.on_segment = 1')
-                    print("Warning('self.position calculation error, self.on_segment = 1'")
+                    #print("Warning('self.position calculation error, self.on_segment = 1'")
                     raise ValueError
             else:
                 self.on_segment1 = 0
@@ -352,7 +355,7 @@ class LineLineIntersect3D:
                     xr_dir = 1
                 else:
                     #Warning('self.position calculation error, self.on_segment = 0')
-                    print("Warning('self.position calculation error, self.on_segment = 0'")
+                    #print("Warning('self.position calculation error, self.on_segment = 0'")
                     raise ValueError
 
             # Set the member 'X' direction with respect to p1 and p2 - either '+' or '-'
@@ -475,7 +478,8 @@ class Plane3D:
 
         else:
             #raise TypeError, 'The arguments passed to Plane3D must be a POINT'
-            print ("raise TypeError, 'The arguments passed to Plane3D must be a POINT'")
+            #print ("raise TypeError, 'The arguments passed to Plane3D must be a POINT'")
+            pass
         
     # Calculate points to define plane #2 and calculate N2 and d2
     def plane_2(self):
@@ -594,49 +598,44 @@ class Plane3D:
 
 # end function definition
 ###############################################################################
-def support_column_fast(x1, y1, z1, x2, y2, z2, strut_radius, faces):
+def support_column_fast(bm, x1, y1, z1, x2, y2, z2, strut_radius, base_radius, base_height, segments):
 
-    # Add a cylinder from centre of the face to the baseplate
+    strutHeight = (z1+z2)/2 + strut_radius * 2  # including strut_radius means it merges into the support pyramid (rather than the pyramid sitting on it)
 
-    cone_radius = 1
-    cone_height = 1
-
-    coords = (mw @ f.calc_center_median() for f in bm.faces if f.select)
     bm = bmesh.new()
-    for co in coords:
-        print(co)
-        bm.clear()
-        cone_mesh = bpy.data.meshes.new("Base")    
-        bmesh.ops.create_cone(
-                bm,
-                segments=16,
-                diameter1=cone_radius,
-                depth=cone_height,
-                cap_ends=True,
-                cap_tris=True, # tri fan fill.
-                matrix=Matrix.Translation((0, 0, cone_height/2))
-                )
-        bm.to_mesh(cone_mesh)        
-        cone = bpy.data.objects.new("Base", cone_mesh)
-        cone.location = (co.x, co.y, 0)
-        coll.objects.link(cone)
+
+    bm.clear()
+    cone_mesh = bpy.data.meshes.new("Base")
+    bmesh.ops.create_cone(
+            bm,
+            segments=segments,
+            diameter1=base_radius,
+            diameter2=strut_radius,
+            depth=base_height,
+            cap_ends=True,
+            cap_tris=True, # tri fan fill.
+            matrix=Matrix.Translation((0, 0, base_height/2))
+            )
+    bm.to_mesh(cone_mesh)
+    cone = bpy.data.objects.new("Base", cone_mesh)
+    cone.location = (x1, y1, 0)
+    bpy.data.collections['AutoSupports'].objects.link(cone)
             
-        bm.clear()
-        strut_mesh = bpy.data.meshes.new("Strut")
-        
-        bmesh.ops.create_cone(
-                bm,
-                segments=3,
-                diameter1=strut_radius,
-                diameter2=strut_radius,
-                depth=co[2],
-                cap_ends=True,
-                matrix=Matrix.Translation((0, 0, co[2] / 2)),
-                )
-        bm.to_mesh(strut_mesh)        
-        strut = bpy.data.objects.new("Strut", strut_mesh)
-        strut.location = (co.x, co.y, 0)
-        coll.objects.link(strut)
+    bm.clear()
+    strut_mesh = bpy.data.meshes.new("Strut")
+    bmesh.ops.create_cone(
+            bm,
+            segments=segments,
+            diameter1=strut_radius,
+            diameter2=strut_radius,
+            depth=z2,
+            cap_ends=True,
+            matrix=Matrix.Translation((0, 0, strutHeight / 2)),
+            )
+    bm.to_mesh(strut_mesh)
+    strut = bpy.data.objects.new("Strut", strut_mesh)
+    strut.location = (x1, y1, 0)
+    bpy.data.collections['AutoSupports'].objects.link(strut)
 
 
 
@@ -695,158 +694,170 @@ def createMesh(name, origin, verts, edges, faces):
     return ob
  
 
-def support_interface(worldCoords, face, maxAngle, supportLoc):
-    #print()
-    #print("NEW FACE")
-    (wX,wY,wZ) = worldCoords
-    
-#        face[0] is the centroid calculated by blender
-#        face[1] is the list of vertices for the face
+
+# This creates a triangular pyramid with one face in contact with the original face
+#   and the other faces angled to ensure they do not exceed a 
+#   predetermined maximum overhang angle
+# It starts by calculating the length of a line perpendicular from an 
+#   edge from the face to the centroid.
+# It then calculates the height the line would intercept a vertical axis 
+#   running through the centroid at maxAngle from vertical.
+# The three vertices are then used to generate a plane from that edge
+# This is repeated to generate three planes.
+# The location at which all three intersect provides the 4th vertex to form the pyramid...
+def support_interface(faceVerts, maxAngle):
+
+    if len(faceVerts) != 3:
+        return
 
     # will create with faces feeding under the centroid
     # This isn't the ideal point as angle from some vertices will be much shallower than required
-    centroid = Point(face[0][0], face[0][1], face[0][2])
+    centroid =  Point((faceVerts[0].x + faceVerts[1].x + faceVerts[2].x)/3, 
+                 (faceVerts[0].y + faceVerts[1].y + faceVerts[2].y)/3, 
+                 (faceVerts[0].z + faceVerts[1].z + faceVerts[2].z)/3)
 
-    # two random points on the z-axis (to get distance from each vertex to z-axis)
-    pZ1 = Point(0,0,-1000)
-    pZ2 = Point(0,0,1000)   
-
-    print("")
-    print("Starting New Face Calculation")
-    if len(face[1]) != 3:
-        print("ERROR: this function will not work unless faces have exactly 3 edges")
-        print("Function will ignore this face until script is updated to handle this")
-        return
-
-    print("Using vertices:-")
-    # convert the vertices to Points for looping
-    vertices = []
-    for vert in face[1]:
-        # Converting to world coordinates isn't required, but makes it easier to bug check
-        #newV = Point (vert.co[0]+wX, vert.co[1]+wY, vert.co[2]+wZ)
-        newV = Point (vert.co[0], vert.co[1], vert.co[2])
-        vertices.append(newV)
-        print(newV.x,newV.y,newV.z)
-        if (newV.x == 0 and newV.y == 0):
-            print("ERROR: this function can not currently identify the plane if an edge hits the z-axis (eg if a vertex is on zero)")
-            print("Function will ignore this face until script is updated to support this")
-            return
+    # two points forming a z-axis directly though the centroid
+    pZ1 = Point(centroid.x, centroid.y, centroid.z-1000)
+    pZ2 = Point(centroid.x, centroid.y, centroid.z+1000)
 
 
-    # now loop through each edge and identify the z-intercept in order to generate the 3 points to define the plane
-    # add the plane generated to the list of planes
+    # loop through each edge 
+    #   identify the z intercept (using the centroid as the z-axis)
+    #   generate the 3 points to define the plane
+    #   add the plane generated to the list of planes
     planes = []
-    maxV = len(vertices)
-    for v in range(maxV):
-        p1 = vertices[v]
-        if v < maxV-1:
-            p2 = vertices[v+1]
+    for v in range(3):
+        p1 = faceVerts[v]
+        if v == 2:
+            p2 = faceVerts[0]   # it's a loop so vertex[0] is the next in line from vertex[2]
         else:
-            p2 = vertices[0]
+            p2 = faceVerts[v+1]
+            
             
         # identify the intersection of the lines
-        #The dot product of the line defined by the two points with the z-axis allow us to calculate that
-        # Blender can do this step
-        # mathutils.geometry.intersect_line_line(v1, v2, v3, v4)
+        # This is calculated as the dot product of the line defined by the two points with the centroid z-axis
+        # Blender could also do this step:  mathutils.geometry.intersect_line_line(v1, v2, v3, v4)
         lli = LineLineIntersect3D(p1,p2,pZ1,pZ2)
 
 
         if (lli.uv.x == 0.0 and lli.uv.x == 0.0 and lli.uv.x == 0.0):
-            print("ERROR: unit vector has length zero. This means all three points are in a line.")
-            print("Thus the x-axis intercept cannot be used to provide the 3rd point of the plane")
-            print("Using (1,1,0)->(1,1,1) line instead)")
-            lli = LineLineIntersect3D(p1,p2,Point(1,1,0),Point(1,1,1))
+            #print("ERROR: unit vector has length zero. This means both lines are in contact.")
+            #print("  This may be a zero-area face (but then it shouldn't be overhanging so seems odd), as it should never happen using the centroid z-axis (or the face wouldn't be a triangle)")
+            #print("  aborting calculation on this face")
+            return
+            #print(" NB it would be a risk if using the true z-axis")
+            #print("Thus the z-axis intercept cannot be used to provide the 3rd point of the plane")
+            #print("And in this situation could try using (1,1,0)->(1,1,1) line instead)")
+            #lli = LineLineIntersect3D(p1,p2,Point(1,1,0),Point(1,1,1))
             
-        print("Calculating plane from p1p2 edge with coordinates of:")
-        print(p1)
-        print(p2)
-        print("UV (unit vector):", lli.uv)
+        #print("Calculating plane from p1p2 edge with coordinates of:")
+        #print(p1)
+        #print(p2)
+        #print("UV (unit vector):", lli.uv)
                     
-        # the point on p1p2 will be exactly maxAngle from the point the plane intersects the z-axis
-        print("Nearest point on p1p2 to z-axis:",lli.Pmem1)
+        # the point on p1p2 will be exactly maxAngle from the point the plane intersects the centroid z-axis
+        #print("Nearest point on p1p2 to z-axis:",lli.Pmem1)
         # the hypotenuse of a horizontal xy triangle becomes the adjacent side for the triangle down to the intercept
         # thus the opposite side (the difference in z-axis height from the current point is Opp = Adj*tan(maxAngle)
-        xyHyp = sqrt(lli.Pmem1.x*lli.Pmem1.x + lli.Pmem1.y*lli.Pmem1.y) 
-               
+        #formula if using the z-axis at x=0,y=0
+        #xyHyp = sqrt(lli.Pmem1.x*lli.Pmem1.x + lli.Pmem1.y*lli.Pmem1.y) 
+        dx = lli.Pmem1.x - centroid.x
+        dy = lli.Pmem1.y - centroid.y
+        #dz = lli.Pmem1.z - centroid.z
+        print("dx=",dx,"dy=",dy)
+        xyHyp = sqrt(dx*dx + dy*dy)
+
         print("xy hypotenuse = xyz adjacent side:",xyHyp)
-        opp = xyHyp * math.tan(maxAngle)
+        opp = abs(xyHyp * math.tan(maxAngle))
         if opp==0.0:
-            print("ERROR: this function will not work for horizontal planes")
-            print("Function will ignore this face until script is updated to handle this")
+            #print("ERROR: this function will not work for horizontal planes")
+            #print("  This should never happen if using centroid and non-zero face size")
+            #print("Function will ignore this face until script is updated to handle this")
             return            
-        print("z intercept should be +/-",opp)
+
+        # Because we are using the centroid for our z-axis, we know the correct point must be below the height calculated for the intersection
+        # and the normal N.z needs to point up to be towards the centroid
+        p3 = Point(centroid.x, centroid.y, lli.Pmem1.z-opp)
+        planeC = Plane3D(p1, p2, p3)
+        if planeC.N.z < 0:
+            planeC.N = -planeC.N
+ 
+        planes.append(planeC)
+        print("Verts of plane", p1, p2, p3)
+
+        '''
+        # If using the true z-axis the check is a bit more fiddly we need to test which of the two points produces a plane in the correct orientation
+        #print("z intercept should be +/-",opp)
         # now we have two potential intercepts (one above and one below the level of the intersection)
         p3a = Point(0,0,lli.Pmem1.z+opp)
         p3b = Point(0,0,lli.Pmem1.z-opp)
         
-        print("zIntercept candidates are:-")     
+        #print("zIntercept candidates are:-")     
         print(p3a)
         print(p3b)
-   
-        
-        
-        # Now there are four potential normals for the plane. 
-        # We need to test which of the two points produces a plane in the coorrect orientation
+
+        # Now there are four potential normals for the plane.
+
         # Selecting the normal which is on the same side as one of the other face points and which has uv.z >0 (or it's negative) 
         #   will identify the correct one. 
         # Use the face centron to identify whether the normal is on the same or opposide side of the plane as the face
         #   and whether the normal points up or down (it should point up towards the face or down away)
-        print ("Testing plane candidate generated using point p3a")
+        #print ("Testing plane candidate generated using point p3a")
         planeC = Plane3D(p1, p2, p3a)
         correctPlane = False
         lieCheckA = planeC.lie_check(centroid)
 
         if lieCheckA == 0.0:
-            print("Warning: The face centroid lies on current plane.")
-            print("  The face  may be at exactly maxAngle (but if this is the case it shouldn't have been selected for support)")
+            #print("Warning: The face centroid lies on current plane.")
+            #print("  The face  may be at exactly maxAngle (but if this is the case it shouldn't have been selected for support)")
         elif lieCheckA < 0.0:
-            print ("The centroid lies on OPPOSITE side of current plane as normal N.")
+            #print ("The centroid lies on OPPOSITE side of current plane as normal N.")
             if planeC.N.z < 0:
-                print ("The normal N.z points DOWN so this is the correct plane")
+                #print ("The normal N.z points DOWN so this is the correct plane")
                 correctPlane = True
                 planeC.N = -planeC.N
         else:
-            print ("The centroid lies on SAME side of current plane as normal N.")
+            #print ("The centroid lies on SAME side of current plane as normal N.")
             if planeC.N.z > 0:
-                print ("The normal N.z points UP so this is the correct plane")
+                #print ("The normal N.z points UP so this is the correct plane")
                 correctPlane = True
                 planeC.N = -planeC.N
                 
         if not correctPlane:        
-            print ("p3a plane didn't meet selection criteria")
-            print ("Testing plane candidate generated using  point p3b")
+            #print ("p3a plane didn't meet selection criteria")
+            #print ("Testing plane candidate generated using  point p3b")
             planeC = Plane3D(p1, p2, p3b)
             correctPlane = False
             lieCheckA = planeC.lie_check(centroid)
             if lieCheckA == 0.0:
-                print ("ERROR: The face centroid lies on current plane - THIS SHOULDN'T HAPPEN IF THE PLANE IS CORRECT")
+                #print ("ERROR: The face centroid lies on current plane - THIS SHOULDN'T HAPPEN IF THE PLANE IS CORRECT")
             elif lieCheckA < 0.0:
-                print ("The centroid lies on OPPOSITE side of current plane as normal N.")
+                #print ("The centroid lies on OPPOSITE side of current plane as normal N.")
                 if planeC.N.z < 0:
-                    print ("The normal N.z points DOWN so this is the correct plane")
+                    #print ("The normal N.z points DOWN so this is the correct plane")
                     correctPlane = True
                     planeC.N = -planeC.N
             else:
-                print ("The centroid lies on SAME side of current plane as normal N.")
+                #print ("The centroid lies on SAME side of current plane as normal N.")
                 if planeC.N.z > 0:
-                    print ("The normal N.z points UP so this is the correct plane")
+                    #print ("The normal N.z points UP so this is the correct plane")
                     correctPlane = True
                     planeC.N = -planeC.N
                         
         if not correctPlane:
-            print ("ERROR: Neither plane matches - THIS SHOULDN'T HAPPEN IF THE PLANE IS CORRECT")
+            #print ("ERROR: Neither plane matches - THIS SHOULDN'T HAPPEN IF THE PLANE IS CORRECT")
             return
         else: 
             planes.append(planeC)
-
+        '''
         
     # Now we should have three planes we just need to establish the intersect point
     if len(planes) == 3:
-        print("3 PLANES IDENTIFIED")
+        #print("3 PLANES IDENTIFIED")
+        pass
     else:
-        print("NEVER EVENT OCCURRED:")
-        print("  Number of planes != 3")
-        print("  Function will ignore this face until script is updated to handle this")
+        #print("ERROR: Number of planes != 3")
+        #print("  Not sure why as zero area faces should already have been filtered, but function will ignore this face")
         return
 
     # The intersection point of the three planes "M" is given by:
@@ -855,7 +866,7 @@ def support_interface(worldCoords, face, maxAngle, supportLoc):
     # blender could do this step with:
     # blender could do this with
     # mathutils.geometry.intersect_plane_plane(plane_a_co, plane_a_no, plane_b_co, plane_b_no)
-    print("Normals and D coefficients for the three planes are:-")   
+    #print("Normals and D coefficients for the three planes are:-")   
     N0 = planes[0].N
     N1 = planes[1].N
     N2 = planes[2].N
@@ -865,9 +876,9 @@ def support_interface(worldCoords, face, maxAngle, supportLoc):
     #k0 = round(N0.dot(planes[0].p1), 6)
     #k1 = round(N1.dot(planes[1].p1), 6)
     #k2 = round(N2.dot(planes[2].p1), 6)
-    print(N0.x, N0.y, N0.z, "   ", D0)#, "   ", k0)
-    print(N1.x, N1.y, N1.z, "   ", D1)#, "   ", k1)
-    print(N2.x, N2.y, N2.z, "   ", D2)#, "   ", k2)
+    #print(N0.x, N0.y, N0.z, "   ", D0)#, "   ", k0)
+    #print(N1.x, N1.y, N1.z, "   ", D1)#, "   ", k1)
+    #print(N2.x, N2.y, N2.z, "   ", D2)#, "   ", k2)
 
     N12 = N1.cross(N2)
     N20 = N2.cross(N0)
@@ -875,13 +886,13 @@ def support_interface(worldCoords, face, maxAngle, supportLoc):
     N0dN12 = round(N0.dot(N12), 6)
 
 
-    print("Original Face Vertices and Centroid are:-")
-    for vert in vertices:
-        print(vert.x, vert.y, vert.z)
-    print(face[0].x, face[0].y, face[0].z, "(=centroid)")
+    #print("Original Face Vertices and Centroid are:-")
+    #for vert in faceVerts:
+        #print(vert.x, vert.y, vert.z)
+    #print(centroid.x, centroid.y, centroid.z, "(=centroid)")
 
 
-    print("Intersection Point Is:-")    
+    #print("Intersection Point Is:-")    
     # TODO: figure out why Point overloads aren't working
     # M = (D0*N12 + D1*N20 + D2*N01) / N0dN12
     # point overloads not working, so calculate individually first
@@ -892,59 +903,52 @@ def support_interface(worldCoords, face, maxAngle, supportLoc):
     CPs = D0N12 + D1N20 + D2N01
 
             
-    M = Point(CPs.x / N0dN12, CPs.y / N0dN12, CPs.z / N0dN12) 
-    print(M.x, M.y, M.z)
-
-
-
-    x = M.x + wX
-    y = M.y + wY
-    z = M.z + wZ
-
-    # update the mutables so they're accessible outside the function
-#    distanceBelow = 5
-    supportLoc[0] = z
-#    z = z-distanceBelow
-    supportLoc[1] = (x,y,z)
-    
+    pyramidTip = Point(CPs.x / N0dN12, CPs.y / N0dN12, CPs.z / N0dN12)   # = M
+    #print(pyramidTip.x, pyramidTip.y, pyramidTip.z)
 
     # now create a list with the vertices from the original face + the new vertex
-    verts1 = []
-    for vert in face[1]:
-        verts1.append((vert.co[0] + wX, vert.co[1] + wY, vert.co[2] + wZ))
-    faceVertCnt = len(verts1)
-    verts1.append((x,y,z))   
+    verts = []
+    for vert in faceVerts:
+        verts.append(vert)
+    faceVertCnt = len(verts)
+    verts.append(pyramidTip)
+    for v in verts:
+        print(v)
+    ##print("faceVertCnt=",faceVertCnt)
     
-    #print("faceVertCnt=",faceVertCnt)
-    
-    faces1 = []
-    faces1.append((range(faceVertCnt)))
-    faces1.append((0,faceVertCnt-1,faceVertCnt))
+    faces = []
+    faces.append((range(faceVertCnt)))
+    faces.append((0,faceVertCnt-1,faceVertCnt))
     for i in range(0,faceVertCnt-1):
-        faces1.append((i+1,i,faceVertCnt))
+        faces.append((i+1,i,faceVertCnt))
         
-    #print("Verts=",verts1)
-    #print("Faces=",faces1)
-    obj = createMesh('interface', (0,0,0), verts1, [], faces1)
+    ##print("Verts=",verts1)
+    ##print("Faces=",faces1)
+    obj = createMesh('interface', (0,0,0), verts, [], faces)
 #    bpy.ops.collection.objects_remove_all()
     bpy.data.collections['AutoSupports'].objects.link(obj)
-    return obj
+    print()
+    return pyramidTip
 
 
 
 def createSupports():
     supportFaceGap = 0.0
     supportInterfaceOverhangAngle = 45
+    supportColumnRadius = 0.1
+    supportColumnBaseRadius = 1
+    supportColumnBaseHeight = 1
+    supportColumnFaces = 16
 
     supportsMerge = False
-    supportType = "SUPPORT_COLUMN"
-    supportType = "SUPPORT_IBEAM"
-    supportType = "SUPPORT_MOLD"
-    supportType = "SUPPORT_WALL"
-    supportType = "SUPPORT_AUTO"
+    supportType = "SUPPORT_COLUMN"   # a "standard" solid cylindrical support 
+    supportType = "SUPPORT_IBEAM"    # Athough theoretically an IBeam or a Pipe has greater strength to volume than a column the surface or internal holds more resin, so advantages are probably minimal
+    supportType = "SUPPORT_BRIDGE"   # Loosly attach a bridge which molds to both faces and transfers force
+    supportType = "SUPPORT_WALL"     # A thin zig-zag wall (but again issues with resin drainage) 
+    supportType = "SUPPORT_AUTO"     # This creates a triangular pyramid with faces which do not exceed the #printable overhang angle
+                                     #   the contact face can be underexposed to make it easier to remove
+                                     #   and the support column can then be attached firmly to this support pyramid
 
-    supportColumnDiameter = 0.1
-    supportColumnFaces = 3
 
 
     ob = bpy.context.object
@@ -956,78 +960,73 @@ def createSupports():
     #The context can be edit or object mode
         
     # Get current context to set back at end
-    initialMode = bpy.context.active_object.mode
+    #initialMode = bpy.context.active_object.mode
     initialSelection = bpy.context.selected_objects
-
+    print(len(initialSelection))
 
     # get current mesh
     current_mesh = bpy.context.object.data
 
     # create empty bmesh, add current mesh into empty bmesh
-    current_bm = bmesh.new()
-    current_bm.from_mesh(current_mesh)
+    bm = bmesh.new()
+    bm.from_mesh(current_mesh)
 
-    #bpy.ops.object.mode_set(mode = 'EDIT')
+    #Creates a new collection if not testing for existance first
+    coll = bpy.data.collections.get("AutoSupports")
+    if coll == None:
+       bpy.context.scene.collection.children.link(bpy.data.collections.new("AutoSupports"))
+
+    # matrix_world only accessible in EDIT mode
+    bpy.ops.object.mode_set(mode = 'EDIT')
+    mw = bpy.context.edit_object.matrix_world
     wX =  bpy.context.object.matrix_world[0][3]
     wY =  bpy.context.object.matrix_world[1][3]
     wZ =  bpy.context.object.matrix_world[2][3]
 
-
-
-
-    ##print(wX,wY,wZ)
-
-
-    selected_faces = []
-    for face in current_bm.faces:
-        if face.select:
-            selected_face_verts = []
-            for loop in face.loops:
-                #uv = loop[uv_lay].uv
-                ##print("Loop UV: %f, %f" % uv[:])
-                vert = loop.vert
-                ##print("Loop Vert: (%f,%f,%f)" % vert.co[:])
-                selected_face_verts.append(vert)
-            selected_faces.append([face.calc_center_median(),selected_face_verts])
-            #print("\n")
-
-    #Creates a new collection if not testing for existance first
-#    if bpy.data.collections["AutoSupports"] == None:
-    bpy.context.scene.collection.children.link(bpy.data.collections.new("AutoSupports"))
-
-
-    #curMode = bpy.ops.object.mode
+    # we're adding new objects so have to switch to OBJECT mode
     bpy.ops.object.mode_set(mode = 'OBJECT')
-    for face in selected_faces:
-        # add the direct face support, column and base
-#        face[0] is the centroid calculated by blender
-#        face[1] is the list of vertices for the face
 
-        supportLoc = [999999, (0,0,0)]         #faceMinZ = 999999
-        objSI = support_interface((wX,wY,wZ), face, 45, supportLoc)
+    supportBM = bmesh.new()
+    for face in bm.faces:
+        if face.select:
+            # add the direct face support, column and base
+    #        face[0] is the centroid calculated by blender
+    #        face[1] is the list of vertices for the face
+            print("issel",face.index)
+            if len(face.loops) == 3:
+                print("has3",face.index)
+                # extract the vertices to Points for looping
+                verts = []
+                for loop in face.loops:
+                    verts.append(Point (loop.vert.co[0]+wX, loop.vert.co[1]+wY, loop.vert.co[2]+wZ))
+                    #mwV = mw @ loop.vert.co
+                    #verts.append(Point (mwV[0], mwV[1], mwV[2]))
 
-        # creates a support column at the centroid
-        x = face[0][0] + wX
-        y = face[0][1] + wY
-        z = face[0][2] + wZ
 
-        # creates a support column centred on the lowest point of the support interface
-        x = supportLoc[1][0]
-        y = supportLoc[1][1]
-        z = supportLoc[1][2]
-        
-        support_column(x,y,supportLoc[0],x,y,0,supportColumnDiameter/2, supportColumnFaces)        
+                supportXYZ = support_interface(verts, supportInterfaceOverhangAngle)
+                print(supportXYZ)
+                if not supportXYZ == None:
+                    if supportXYZ.z > 0:
+                        # if the support tip is below the printbed then a pillar isn't required
+                        # Otherwise this creates a support column centred on the lowest point of the support interface
+                        x = supportXYZ.x
+                        y = supportXYZ.y
+                        z = supportXYZ.z
+
+                        # create a vertical column
+                        #support_column(x,y,z,x,y,0,supportColumnDiameter/2, supportColumnFaces)        
+                        support_column_fast(supportBM, x, y, z, x, y, z, supportColumnRadius, supportColumnBaseRadius, supportColumnBaseHeight, supportColumnFaces)
 
     # return back to original
     #userSelection.select    
     # bpy.ops.object.mode_set(mode = curMode)  # sadly this doesn't work :-(
-    #print (initialMode)
-    initialSelection[0].select
+    ##print (initialMode)
+    #initialSelection[0].select
     #bpy.ops.object.mode_set(mode = initialMode)
 
 
-#print("")
-#print("*****************   STARTING NEW RUN    *********************")
+##print("")
+##print("*****************   STARTING NEW RUN    *********************")
 #createSupports()
 
 class MESH_OT_print3d_create_supports(Operator):
@@ -1041,4 +1040,6 @@ class MESH_OT_print3d_create_supports(Operator):
         createSupports()
 
         return {'FINISHED'}
+
+
 

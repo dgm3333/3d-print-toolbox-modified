@@ -74,6 +74,141 @@ def clean_float(text):
     return text
 
 
+# Various mesh functions
+
+def limited_dissolve(angle, use_boundaries):
+    #"""dissolve selected edges and verts, limited by the angle of surrounding geometry"""
+    bpy.ops.mesh.dissolve_limited(angle_limit=angle, use_dissolve_boundaries=use_boundaries, delimit={'NORMAL'})
+
+def remove_doubles(threshold):
+    """remove duplicate vertices"""
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.remove_doubles(threshold=threshold)
+
+
+def delete_loose(use_verts=True, use_edges=True, use_faces=True):
+    """delete loose vertices/edges/faces"""
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.delete_loose(use_verts, use_edges, use_faces)
+
+
+def delete_interior():
+    """delete interior faces"""
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.mesh.select_interior_faces()
+    bpy.ops.mesh.delete(type='FACE')
+
+def dissolve_degenerate(threshold):
+    """dissolve zero area faces and zero length edges"""
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.dissolve_degenerate(threshold=threshold)
+
+
+def make_normals_consistently_outwards():
+    """have all normals face outwards"""
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.normals_make_consistent()
+
+def fix_non_manifold(cls, context, sides):
+    """naive iterate-until-no-more approach for fixing manifolds"""
+    total_non_manifold = cls.count_non_manifold_verts(context)
+
+    if not total_non_manifold:
+        return
+
+    bm_states = set()
+    bm_key = cls.elem_count(context)
+    bm_states.add(bm_key)
+
+    while True:
+        cls.fill_non_manifold(sides)
+        cls.delete_newly_generated_non_manifold_verts()
+
+        bm_key = cls.elem_count(context)
+        if bm_key in bm_states:
+            break
+        else:
+            bm_states.add(bm_key)
+
+def select_non_manifold_verts(
+    use_wire=False,
+    use_boundary=False,
+    use_multi_face=False,
+    use_non_contiguous=False,
+    use_verts=False,
+):
+    """select non-manifold vertices"""
+    bpy.ops.mesh.select_non_manifold(
+        extend=False,
+        use_wire=use_wire,
+        use_boundary=use_boundary,
+        use_multi_face=use_multi_face,
+        use_non_contiguous=use_non_contiguous,
+        use_verts=use_verts,
+    )
+
+
+def count_non_manifold_verts(cls, context):
+    """return a set of coordinates of non-manifold vertices"""
+    cls.select_non_manifold_verts(use_wire=True, use_boundary=True, use_verts=True)
+
+    bm = bmesh.from_edit_mesh(context.edit_object.data)
+    return sum((1 for v in bm.verts if v.select))
+
+
+def fill_non_manifold(cls, sides):
+    """fill in any remnant non-manifolds"""
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.fill_holes(sides=sides)
+
+
+def delete_newly_generated_non_manifold_verts(cls):
+    """delete any newly generated vertices from the filling repair"""
+    cls.select_non_manifold_verts(use_wire=True, use_verts=True)
+    bpy.ops.mesh.delete(type='VERT')
+
+
+def clean_non_planars(angle_limit):
+    #"""split non-planar faces that exceed the angle threshold"""
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.vert_connect_nonplanar(angle_limit=angle_limit)
+    # bpy.ops.ui.reports_to_textblock()
+
+def fill_holes(sides):
+    #"""fill in holes (boundary edge loops)"""
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.mesh.fill_holes(sides=sides)
+# ---------------
+# Geometry Checks
+
+def execute_check(self, context):
+    obj = context.active_object
+
+    info = []
+    self.main_check(obj, info)
+    report.update(*info)
+
+    multiple_obj_warning(self, context)
+
+    return {'FINISHED'}
+
+
+def multiple_obj_warning(self, context):
+    if len(context.selected_objects) > 1:
+        self.report({"INFO"}, "Multiple selected objects. Only the active one will be evaluated")
+
+def elem_count(context):
+    bm = bmesh.from_edit_mesh(context.edit_object.data)
+    return len(bm.verts), len(bm.edges), len(bm.faces)
+
+def setup_environment():
+    """set the mode as edit, select mode as vertices, and reveal hidden vertices"""
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_mode(type='VERT')
+    bpy.ops.mesh.reveal()
+
+
+
 # ---------
 # Mesh Info
 
@@ -140,35 +275,6 @@ class MESH_OT_print3d_info_area(Operator):
 
         return {'FINISHED'}
 
-
-# ---------------
-# Geometry Checks
-
-def execute_check(self, context):
-    obj = context.active_object
-
-    info = []
-    self.main_check(obj, info)
-    report.update(*info)
-
-    multiple_obj_warning(self, context)
-
-    return {'FINISHED'}
-
-
-def multiple_obj_warning(self, context):
-    if len(context.selected_objects) > 1:
-        self.report({"INFO"}, "Multiple selected objects. Only the active one will be evaluated")
-
-def elem_count(context):
-    bm = bmesh.from_edit_mesh(context.edit_object.data)
-    return len(bm.verts), len(bm.edges), len(bm.faces)
-
-def setup_environment():
-    """set the mode as edit, select mode as vertices, and reveal hidden vertices"""
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_mode(type='VERT')
-    bpy.ops.mesh.reveal()
 
 class MESH_OT_print3d_check_solid(Operator):
     bl_idname = "mesh.print3d_check_solid"
@@ -335,7 +441,6 @@ class MESH_OT_print3d_check_doubles(Operator):
 
     def execute(self, context):
         return execute_check(self, context)
-
 
 
 class MESH_OT_print3d_check_distorted(Operator):
@@ -536,6 +641,42 @@ class MESH_OT_print3d_check_all(Operator):
 
 
 
+
+class MESH_OT_print3d_clean_triangulates(Operator):
+    bl_idname = "mesh.print3d_clean_triangulates"
+    bl_label = "Triangulate Faces"
+    bl_description = "Split any faces with more than 3 vertices into triangles"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        context = bpy.context
+        self.context = context
+        mode_orig = context.mode
+
+        setup_environment()
+
+        bm_key_orig = elem_count(context)
+
+        bpy.ops.mesh.quads_convert_to_tris()        # This does ngons too
+
+        bm_key = elem_count(context)
+
+        if mode_orig != 'EDIT_MESH':
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        self.report(
+            {'INFO'},
+            "Modified Verts:%+d, Edges:%+d, Faces:%+d" %
+            (bm_key[0] - bm_key_orig[0],
+             bm_key[1] - bm_key_orig[1],
+             bm_key[2] - bm_key_orig[2]
+            ))
+
+        return {'FINISHED'}
+
+# This is basically the same as print3d_clean_triangulates, but only triangulates if 
+# any edge normal is greater than angle different to element normal
+# works on bmesh whereas the other works on mesh directly
 class MESH_OT_print3d_clean_distorted(Operator):
     bl_idname = "mesh.print3d_clean_distorted"
     bl_label = "3D-Print Clean Distorted"
@@ -571,7 +712,6 @@ class MESH_OT_print3d_clean_distorted(Operator):
 
         return self.execute(context)
 
-
 class MESH_OT_print3d_clean_non_manifold(Operator):
     bl_idname = "mesh.print3d_clean_non_manifold"
     bl_label = "3D-Print Clean Non-Manifold"
@@ -597,12 +737,12 @@ class MESH_OT_print3d_clean_non_manifold(Operator):
         setup_environment()
         bm_key_orig = elem_count(context)
 
-        self.delete_loose()
-        self.delete_interior()
-        self.remove_doubles(self.threshold)
-        self.dissolve_degenerate(self.threshold)
-        self.fix_non_manifold(context, self.sides)  # may take a while
-        self.make_normals_consistently_outwards()
+        delete_loose()
+        delete_interior()
+        remove_doubles(self.threshold)
+        dissolve_degenerate(self.threshold)
+        fix_non_manifold(context, self.sides)  # may take a while
+        make_normals_consistently_outwards()
 
         bm_key = elem_count(context)
 
@@ -617,108 +757,6 @@ class MESH_OT_print3d_clean_non_manifold(Operator):
 
         return {'FINISHED'}
 
-#    @staticmethod
-#    def elem_count(context):
-#        bm = bmesh.from_edit_mesh(context.edit_object.data)
-#        return len(bm.verts), len(bm.edges), len(bm.faces)
-
-#    @staticmethod
-#    def setup_environment():
-#        """set the mode as edit, select mode as vertices, and reveal hidden vertices"""
-#        bpy.ops.object.mode_set(mode='EDIT')
-#        bpy.ops.mesh.select_mode(type='VERT')
-#        bpy.ops.mesh.reveal()
-
-    @staticmethod
-    def remove_doubles(threshold):
-        """remove duplicate vertices"""
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.remove_doubles(threshold=threshold)
-
-    @staticmethod
-    def delete_loose():
-        """delete loose vertices/edges/faces"""
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.delete_loose(use_verts=True, use_edges=True, use_faces=True)
-
-    @staticmethod
-    def delete_interior():
-        """delete interior faces"""
-        bpy.ops.mesh.select_all(action='DESELECT')
-        bpy.ops.mesh.select_interior_faces()
-        bpy.ops.mesh.delete(type='FACE')
-
-    @staticmethod
-    def dissolve_degenerate(threshold):
-        """dissolve zero area faces and zero length edges"""
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.dissolve_degenerate(threshold=threshold)
-
-    @staticmethod
-    def make_normals_consistently_outwards():
-        """have all normals face outwards"""
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.normals_make_consistent()
-
-    @classmethod
-    def fix_non_manifold(cls, context, sides):
-        """naive iterate-until-no-more approach for fixing manifolds"""
-        total_non_manifold = cls.count_non_manifold_verts(context)
-
-        if not total_non_manifold:
-            return
-
-        bm_states = set()
-        bm_key = cls.elem_count(context)
-        bm_states.add(bm_key)
-
-        while True:
-            cls.fill_non_manifold(sides)
-            cls.delete_newly_generated_non_manifold_verts()
-
-            bm_key = cls.elem_count(context)
-            if bm_key in bm_states:
-                break
-            else:
-                bm_states.add(bm_key)
-
-    @staticmethod
-    def select_non_manifold_verts(
-        use_wire=False,
-        use_boundary=False,
-        use_multi_face=False,
-        use_non_contiguous=False,
-        use_verts=False,
-    ):
-        """select non-manifold vertices"""
-        bpy.ops.mesh.select_non_manifold(
-            extend=False,
-            use_wire=use_wire,
-            use_boundary=use_boundary,
-            use_multi_face=use_multi_face,
-            use_non_contiguous=use_non_contiguous,
-            use_verts=use_verts,
-        )
-
-    @classmethod
-    def count_non_manifold_verts(cls, context):
-        """return a set of coordinates of non-manifold vertices"""
-        cls.select_non_manifold_verts(use_wire=True, use_boundary=True, use_verts=True)
-
-        bm = bmesh.from_edit_mesh(context.edit_object.data)
-        return sum((1 for v in bm.verts if v.select))
-
-    @classmethod
-    def fill_non_manifold(cls, sides):
-        """fill in any remnant non-manifolds"""
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.fill_holes(sides=sides)
-
-    @classmethod
-    def delete_newly_generated_non_manifold_verts(cls):
-        """delete any newly generated vertices from the filling repair"""
-        cls.select_non_manifold_verts(use_wire=True, use_verts=True)
-        bpy.ops.mesh.delete(type='VERT')
 
 
 
@@ -744,7 +782,7 @@ class MESH_OT_print3d_clean_degenerate(Operator):
 
         bm_key_orig = elem_count(context)
 
-        self.dissolve_degenerate(self.threshold)
+        dissolve_degenerate(self.threshold)
 
         bm_key = elem_count(context)
 
@@ -761,11 +799,6 @@ class MESH_OT_print3d_clean_degenerate(Operator):
 
         return {'FINISHED'}
 
-    @staticmethod
-    def dissolve_degenerate(threshold):
-        """dissolve zero area faces and zero length edges"""
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.dissolve_degenerate(threshold=threshold)
 
 
 class MESH_OT_print3d_clean_doubles(Operator):
@@ -790,7 +823,7 @@ class MESH_OT_print3d_clean_doubles(Operator):
 
         bm_key_orig = elem_count(context)
 
-        self.remove_doubles(self.threshold)
+        remove_doubles(self.threshold)
 
         bm_key = elem_count(context)
 
@@ -807,11 +840,6 @@ class MESH_OT_print3d_clean_doubles(Operator):
 
         return {'FINISHED'}
 
-    @staticmethod
-    def remove_doubles(threshold):
-        """select all vertices and remove duplicated ones"""
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.remove_doubles(threshold=threshold)
 
 
 
@@ -848,7 +876,7 @@ class MESH_OT_print3d_clean_loose(Operator):
 
         bm_key_orig = elem_count(context)
 
-        self.delete_loose(self.use_verts, self.use_edges, self.use_faces)
+        delete_loose(self.use_verts, self.use_edges, self.use_faces)
 
         bm_key = elem_count(context)
 
@@ -864,12 +892,6 @@ class MESH_OT_print3d_clean_loose(Operator):
             ))
 
         return {'FINISHED'}
-
-    @staticmethod
-    def delete_loose(use_verts, use_edges, use_faces):
-        #"""delete loose vertices, edges or faces"""
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.delete_loose(use_verts=use_verts, use_edges=use_edges, use_faces=use_faces)
 
 
 
@@ -897,7 +919,7 @@ class MESH_OT_print3d_clean_non_planars(Operator):
 
         bm_key_orig = elem_count(context)
 
-        self.clean_non_planars(self.angle_threshold)
+        clean_non_planars(self.angle_threshold)
 
         bm_key = elem_count(context)
 
@@ -914,12 +936,6 @@ class MESH_OT_print3d_clean_non_planars(Operator):
 
         return {'FINISHED'}
 
-    @staticmethod
-    def clean_non_planars(angle_limit):
-        #"""split non-planar faces that exceed the angle threshold"""
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.vert_connect_nonplanar(angle_limit=angle_limit)
-        # bpy.ops.ui.reports_to_textblock()
 
 
 class MESH_OT_print3d_clean_concaves(Operator):
@@ -961,40 +977,6 @@ class MESH_OT_print3d_clean_concaves(Operator):
         bpy.ops.mesh.vert_connect_concave()
 
 
-class MESH_OT_print3d_clean_triangulates(Operator):
-    bl_idname = "mesh.print3d_clean_triangulates"
-    bl_label = "Triangulate Faces"
-    bl_description = "Triangulate selected faces"
-    bl_options = {'REGISTER', 'UNDO'}
-
-    def execute(self, context):
-        context = bpy.context
-        self.context = context
-        mode_orig = context.mode
-
-        setup_environment()
-
-        bm_key_orig = elem_count(context)
-
-        bpy.ops.mesh.quads_convert_to_tris()
-
-        bm_key = elem_count(context)
-
-        if mode_orig != 'EDIT_MESH':
-            bpy.ops.object.mode_set(mode='OBJECT')
-
-        self.report(
-            {'INFO'},
-            "Modified Verts:%+d, Edges:%+d, Faces:%+d" %
-            (bm_key[0] - bm_key_orig[0],
-             bm_key[1] - bm_key_orig[1],
-             bm_key[2] - bm_key_orig[2]
-            ))
-
-        return {'FINISHED'}
-
-
-
 class MESH_OT_print3d_clean_holes(Operator):
     bl_idname = "mesh.print3d_clean_holes"
     bl_label = "Fill Holes"
@@ -1017,7 +999,7 @@ class MESH_OT_print3d_clean_holes(Operator):
 
         bm_key_orig = elem_count(context)
 
-        self.fill_holes(self.sides)
+        fill_holes(self.sides)
 
         bm_key = elem_count(context)
 
@@ -1033,12 +1015,6 @@ class MESH_OT_print3d_clean_holes(Operator):
             ))
 
         return {'FINISHED'}
-
-    @staticmethod
-    def fill_holes(sides):
-        #"""fill in holes (boundary edge loops)"""
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.mesh.fill_holes(sides=sides)
 
 
 
@@ -1072,7 +1048,7 @@ class MESH_OT_print3d_clean_limited(Operator):
 
         bm_key_orig = elem_count(context)
 
-        self.limited_dissolve(self.angle_threshold, self.use_boundaries)
+        limited_dissolve(self.angle_threshold, self.use_boundaries)
 
         bm_key = elem_count(context)
 
@@ -1089,10 +1065,6 @@ class MESH_OT_print3d_clean_limited(Operator):
 
         return {'FINISHED'}
 
-    @staticmethod
-    def limited_dissolve(angle, use_boundaries):
-        #"""dissolve selected edges and verts, limited by the angle of surrounding geometry"""
-        bpy.ops.mesh.dissolve_limited(angle_limit=angle, use_dissolve_boundaries=use_boundaries, delimit={'NORMAL'})
 
 
 
@@ -1178,62 +1150,21 @@ class MESH_OT_print3d_trigger_clean(Operator):
 
     index: IntProperty()
 
+    scene = bpy.context.scene
+    print_3d = scene.print_3d
+    print_3d = bpy.types.scene.print_3d
 
-    use_export_texture: BoolProperty(
-        name="Copy Textures",
-        description="Copy textures on export to the output path",
-        default=False,
-    )
-    use_apply_scale: BoolProperty(
-        name="Apply Scale",
-        description="Apply scene scale setting on export",
-        default=False,
-    )
-    export_path: StringProperty(
-        name="Export Directory",
-        description="Path to directory where the files are created",
-        default="//",
-        maxlen=1024,
-        subtype="DIR_PATH",
-    )
-    thickness_min: FloatProperty(
-        name="Thickness",
-        description="Minimum thickness",
-        subtype='DISTANCE',
-        default=0.001,  # 1mm
-        min=0.0,
-        max=10.0,
-    )
-    threshold_zero: FloatProperty(
-        name="Threshold",
-        description="Limit for checking zero area/length",
-        default=0.01,
-        precision=5,
-        min=0.0,
-        max=0.2,
-    )
-    angle_distort: FloatProperty(
-        name="Angle",
-        description="Limit for checking distorted faces",
-        subtype='ANGLE',
-        default=math.radians(45.0),
-        min=0.0,
-        max=math.radians(180.0),
-    )
-    angle_sharp: FloatProperty(
-        name="Angle",
-        subtype='ANGLE',
-        default=math.radians(160.0),
-        min=0.0,
-        max=math.radians(180.0),
-    )
-    angle_overhang: FloatProperty(
-        name="Angle",
-        subtype='ANGLE',
-        default=math.radians(45.0),
-        min=0.0,
-        max=math.radians(90.0),
-    )
+
+
+    use_export_texture = print_3d.use_export_texture
+    use_apply_scale = print_3d.use_apply_scale
+    export_path = print_3d.export_path
+    thickness_min = print_3d.thickness_min
+    threshold_zero = print_3d.threshold_zero
+    angle_distort = print_3d.angle_distort
+    angle_sharp = print_3d.angle_sharp
+    angle_overhang = print_3d.angle_overhang
+    threshold = print_3d.threshold
 
     _type_to_mode = {
         bmesh.types.BMVert: 'VERT',

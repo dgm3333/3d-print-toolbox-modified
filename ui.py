@@ -21,6 +21,10 @@
 # Interface for this addon.
 
 
+# For adding new menus
+#https://blenderartists.org/t/blender-2-8-add-view-3d-menu/1137302/4
+
+
 from bpy.types import Panel
 import bmesh
 
@@ -32,6 +36,8 @@ from . import report
 
 
 '''
+# I would have expected this would be the same, but it isn't working :-(
+#https://blender.stackexchange.com/questions/109711/how-to-popup-simple-message-box-from-python-console
 def print3d_show_check_clean_help(bpy.types.Operator):
     bl_idname = "message.print3d_show_check_clean_help"
     bl_label = ""
@@ -172,6 +178,11 @@ class VIEW3D_PT_print3d_analyze(View3DPrintPanel, Panel):
         row.prop(print_3d, "angle_distort", text="")
         row.operator("mesh.print3d_clean_distorted", text="", icon="SHADERFX",)
 #        row.operator("mesh.print3d_clean_distorted", text="Distorted")
+#        row = col.row(align=True)
+#        row.label(text="Triangulate Faces:")
+#        row.operator("mesh.print3d_clean_triangulates", text="", icon="SHADERFX",)
+
+
 
         row = col.row(align=True)
         row.operator("mesh.print3d_check_thick", text="Thickness")
@@ -184,9 +195,9 @@ class VIEW3D_PT_print3d_analyze(View3DPrintPanel, Panel):
         row.prop(print_3d, "angle_sharp", text="")
         row.operator("mesh.print3d_class_notdefined", text="", icon="UNLINKED",)
 
-#        row = col.row(align=True)
-#        row.operator("mesh.print3d_check_disconnected", text="Disconnected")
-#        row.prop(print_3d, "proportion_disconnected", text="")
+        row = col.row(align=True)
+        row.operator("mesh.print3d_check_disconnected", text="Disconnected")
+        row.prop(print_3d, "proportion_disconnected", text="")
 
         row = col.row(align=True)
         row.operator("mesh.print3d_check_overhang", text="Overhang")
@@ -220,10 +231,6 @@ class VIEW3D_PT_print3d_analyze(View3DPrintPanel, Panel):
         row.operator("mesh.print3d_clean_concaves", text="", icon="SHADERFX",)
 
         row = col.row(align=True)
-        row.label(text="Triangulate Faces:")
-        row.operator("mesh.print3d_clean_triangulates", text="", icon="SHADERFX",)
-
-        row = col.row(align=True)
         row.label(text="Fill Holes:")
         row.operator("mesh.print3d_clean_holes", text="", icon="SHADERFX",)
 
@@ -249,52 +256,68 @@ class VIEW3D_PT_print3d_meshlab(View3DPrintPanel, Panel):
         col = layout.column(align=True)
         row = col.row(align=True)
 
-        if not print_3d.pymeshlabAvailable:
-            row.label(text="You Need To Install Meshlab: ")
-    #        row.operator("message.print3d_show_meshlab_install_help", text="", icon="QUESTION",)
-            row.operator("mesh.print3d_class_notdefined", text="", icon="UNLINKED",)
+        if True:
+        #if print_3d.pymeshlabAvailable != 1:
 
-            #To use meshlab filters on Blender meshes
-            #Details are at:
-            #https://pypi.org/project/pymeshlab/
+            try:
+                # if pymeshlab was imported then load list of available filters
+                # may need a better check that imported
+                # eg pmeshlab.print_pymeshlab_version()
+                if len(print_3d.pymeshlabfilters) < 5:
+                    for f in pymeshlab.filter_list():
+                        print_3d.pymeshlabfilters.append((f,f,f))
+                        #print(f)
+                # TODO Not sure why getting error for pymeshlabAvailable but not for pymeshlabfilters:
+                # AttributeError: Writing to ID classes in this context is not allowed: Scene, Scene datablock, error setting SceneProperties.pymeshlabAvailable
+                #print_3d.pymeshlabAvailable = 1
 
-            # You first need to install pymeshlab
-            #You can do this from the Blender scripting workspace in Blender 2.92
-            # BUT you have to have admininistor priviledges so for Windows users
-            #JUST THIS ONCE open Blender by R-clicking on it in the start menu and select"Run as Administrator"
+            except:
+                print_3d.pymeshlabAvailable = -1
 
-            #Open up the System Console (under the Window menu)
-            #Then paste the following into the scripting workspace and run it
+            
+                row = col.row(align=True)
+                row.label(text="To use meshlab filters in Blender")
+                row = col.row(align=True)
+                row.label(text="You Need To Install Meshlab")
+                row = col.row(align=True)
+                row.label(text="from www.meshlab.net")
+                row = col.row(align=True)
+                row.label(text="")
+                row = col.row(align=True)
+                row.label(text="Then install the python addon")
+                row = col.row(align=True)
+                row.label(text="into Blender by")
+                row = col.row(align=True)
+                row.label(text="clicking the following ")
+                row = col.row(align=True)
+                row.label(text="")
+                row = col.row(align=True)
+                row.label(text="INSTALL PYMESHLAB")
+                row = col.row(align=True)
+                row.operator("VIEW3D_OT_print3d_install_pymeshlab", text="INSTALL PYMESHLAB", icon="",)
+                row = col.row(align=True)
+                row.label(text="")
+                row = col.row(align=True)
+                row.label(text="Now exit Blender and restart it normally")
+                row = col.row(align=True)
+                row.label(text="")
+                row = col.row(align=True)
+                row.label(text="More detail about pymeshlab is available at")
+                row = col.row(align=True)
+                row.label(text="https://pypi.org/project/pymeshlab/")
 
-            #--- FROM HERE ---#
-            '''
-            import subprocess
-            import sys
-            import os
- 
-            # path to python.exe
-            python_exe = os.path.join(sys.prefix, 'bin', 'python.exe')
- 
-            # upgrade pip
-            subprocess.call([python_exe, "-m", "ensurepip"])
-            subprocess.call([python_exe, "-m", "pip", "install", "--upgrade", "pip"])
- 
-            # install required packages
-            subprocess.call([python_exe, "-m", "pip", "install", "pymeshlab"])
-
-            print("DONE")
-            '''
-            #--- TO HERE ---#
 
 
-            #Now exit Blender and restart it normally
+        if True:
+        #if print_3d.pymeshlabAvailable == 1:
 
-
-
-        else:
+            row = col.row(align=True)
+            row.label(text="meshlab filters:")
 
             row = col.row(align=True)
             row.operator("mesh.print3d_clean_triangulates", text="Triangulate Faces")
+
+
 
 
 
